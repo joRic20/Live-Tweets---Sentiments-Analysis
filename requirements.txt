@@ -76,6 +76,8 @@ jinja2==3.1.6
     #   altair
     #   pydeck
     #   torch
+joblib==1.5.1
+    # via scikit-learn
 jsonschema==4.24.0
     # via altair
 jsonschema-specifications==2025.4.1
@@ -104,6 +106,8 @@ numpy==2.3.1
     #   matplotlib
     #   pandas
     #   pydeck
+    #   scikit-learn
+    #   scipy
     #   streamlit
     #   transformers
     #   wordcloud
@@ -186,6 +190,7 @@ regex==2024.11.6
     # via transformers
 requests==2.32.4
     # via
+    #   -r requirements.in
     #   huggingface-hub
     #   requests-oauthlib
     #   streamlit
@@ -199,6 +204,10 @@ rpds-py==0.25.1
     #   referencing
 safetensors==0.5.3
     # via transformers
+scikit-learn==1.7.0
+    # via -r requirements.in
+scipy==1.16.0
+    # via scikit-learn
 six==1.17.0
     # via python-dateutil
 smmap==5.0.2
@@ -217,6 +226,8 @@ sympy==1.14.0
     # via torch
 tenacity==9.1.2
     # via streamlit
+threadpoolctl==3.6.0
+    # via scikit-learn
 tokenizers==0.21.2
     # via transformers
 toml==0.10.2
@@ -257,7 +268,7 @@ tzdata==2025.2
     # via pandas
 urllib3==2.5.0
     # via requests
-uvicorn==0.34.3
+uvicorn==0.35.0
     # via -r requirements.in
 wcwidth==0.2.13
     # via prompt-toolkit

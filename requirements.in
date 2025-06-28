@@ -23,6 +23,9 @@ streamlit
 plotly
 wordcloud 
 matplotlib
+requests
+scikit-learn
+
 
 # Developer Tools & Testing
 pytest

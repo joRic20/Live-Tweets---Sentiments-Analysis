@@ -1,0 +1,82 @@
+# Use Docker Compose version 3.9 syntax (recommended for modern setups)
+version: '3.9'
+
+# Define all services (containers) in your workflow
+services:
+  # MongoDB database for raw tweets and storage
+  mongo:
+    image: mongo:6               # Use official MongoDB version 6
+    restart: always              # Restart automatically if stopped
+    ports:
+      - "27017:27017"            # Expose MongoDB on localhost:27017
+    volumes:
+      - mongo_data:/data/db      # Persist MongoDB data on your machine
+
+  # PostgreSQL database for analytics/aggregates
+  postgres:
+    image: postgres:15           # Use official PostgreSQL version 15
+    restart: always
+    environment:                 # Set environment vars for DB setup
+      POSTGRES_DB: tweetdb
+      POSTGRES_USER: joric
+      POSTGRES_PASSWORD: tweet
+    ports:
+      - "5432:5432"              # Expose Postgres on localhost:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persist Postgres data
+
+  # FastAPI backend service for analytics API
+  backend:
+    build: ./backend             # Build Docker image from backend directory
+    command: uvicorn fast_api:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      - API_KEY=${API_KEY}       # Use API key from .env
+      - POSTGRES_URI=${POSTGRES_URI}
+      - MONGO_URI=${MONGO_URI}
+      - MONGO_DB=${MONGO_DB}
+      - MONGO_COLL=${MONGO_COLL}
+    ports:
+      - "8000:8000"              # Expose backend API at localhost:8000
+    depends_on:
+      - mongo                    # Start after Mongo is ready
+      - postgres                 # Start after Postgres is ready
+    volumes:
+      - ./backend:/app           # Mount backend code for live reloading
+      - ../requirements.txt:/app/requirements.txt
+
+  # Streamlit dashboard for interactive visualization
+  dashboard:
+    build: .                     # Build from project root (or ./dashboard if you separate)
+    command: streamlit run dashboard/dashboard.py --server.port 8501
+    environment:
+      - API_KEY=${API_KEY}
+      - POSTGRES_URI=${POSTGRES_URI}
+      - MONGO_URI=${MONGO_URI}
+      - MONGO_DB=${MONGO_DB}
+      - MONGO_COLL=${MONGO_COLL}
+    ports:
+      - "8501:8501"              # Expose Streamlit dashboard at localhost:8501
+    depends_on:
+      - backend                  # Wait for backend to be up
+    volumes:
+      - .:/app                   # Mount full project for code access
+
+  # ETL (Extract-Transform-Load) for processing/sentiment
+  etl:
+    build: ./backend
+    command: python etl.py       # Run ETL process
+    environment:
+      - POSTGRES_URI=${POSTGRES_URI}
+      - MONGO_URI=${MONGO_URI}
+      - MONGO_DB=${MONGO_DB}
+      - MONGO_COLL=${MONGO_COLL}
+    depends_on:
+      - mongo
+      - postgres
+    volumes:
+      - ./backend:/app
+
+# Define persistent data volumes for databases
+volumes:
+  mongo_data:
+  postgres_data:

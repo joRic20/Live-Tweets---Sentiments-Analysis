@@ -1,12 +1,13 @@
-import streamlit as st
-import requests
-import pandas as pd
-import plotly.graph_objects as go
-from wordcloud import WordCloud
-import matplotlib.pyplot as plt
-from streamlit_autorefresh import st_autorefresh
+import streamlit as st                          # Import Streamlit for dashboard UI
+import requests                                 # For API requests to backend
+import pandas as pd                             # For dataframe handling
+import plotly.graph_objects as go               # For plotting charts
+from wordcloud import WordCloud                 # For generating word clouds
+import matplotlib.pyplot as plt                 # For plotting word cloud
+from streamlit_autorefresh import st_autorefresh # For auto-refreshing dashboard
 
-API_BASE = "http://localhost:8000"  # Change if backend is hosted elsewhere
+API_BASE = os.environ.get("API_BASE")              # Base URL for FastAPI backend (change if hosted remotely)
+API_KEY = os.environ.get("API_KEY")                     # <-- Set your API key here, or load from st.secrets/env
 
 st.set_page_config(page_title="Campaign Sentiment Analytics", layout="wide")
 st.title("📊 Campaign Sentiment Analytics Dashboard")
@@ -14,42 +15,70 @@ st.title("📊 Campaign Sentiment Analytics Dashboard")
 # --- Auto-refresh every 60 seconds ---
 st_autorefresh(interval=60000, key="dashboard_autorefresh")
 
-# --- Sidebar Filters (Campaigns and Date Range) ---
+# --- Start Ingestion Section in Sidebar ---
+st.sidebar.markdown("### 🔎 Track New Campaign")
+new_term = st.sidebar.text_input("Enter a brand, company, or campaign name")
+
+if st.sidebar.button("Start Tracking"):
+    # When user clicks button, attempt to start backend ingestion for this term
+    if not new_term.strip():
+        st.warning("Please enter a search term to track.")
+    else:
+        try:
+            resp = requests.post(
+                f"{API_BASE}/start_ingest/",
+                json={"term": new_term},
+                headers={"access_token": API_KEY}
+            )
+            if resp.status_code == 200:
+                st.sidebar.success(f"Ingestion started for: {new_term}")
+            else:
+                st.sidebar.error(f"Failed to start ingestion. {resp.text}")
+        except Exception as e:
+            st.sidebar.error(f"Error contacting backend: {e}")
+
+# --- Helper: Fetch campaign options for the multi-select ---
 @st.cache_data
 def fetch_campaigns():
-    return requests.get(f"{API_BASE}/campaigns/").json()
+    # Fetch list of available campaigns from backend
+    return requests.get(f"{API_BASE}/campaigns/", headers={"access_token": API_KEY}).json()
 
+# --- Helper: Fetch date range for filtering ---
 @st.cache_data
 def fetch_date_range():
-    dates = requests.get(f"{API_BASE}/date_range/").json()
+    # Get min/max date in the analytics DB
+    dates = requests.get(f"{API_BASE}/date_range/", headers={"access_token": API_KEY}).json()
     return pd.to_datetime(dates['min_date']).date(), pd.to_datetime(dates['max_date']).date()
 
+# --- Sidebar campaign/date filters ---
 campaigns = fetch_campaigns()
 min_date, max_date = fetch_date_range()
-selected_campaigns = st.sidebar.multiselect("Select Campaign(s)", campaigns, default=campaigns[:2])
-date_range = st.sidebar.date_input("Date Range", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+selected_campaigns = st.sidebar.multiselect(
+    "Select Campaign(s)", campaigns, default=campaigns[:2] if len(campaigns) > 1 else campaigns)
+date_range = st.sidebar.date_input(
+    "Date Range", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 params = {"campaigns": ",".join(selected_campaigns), "start": str(date_range[0]), "end": str(date_range[1])}
 
-# --- Analytics Data ---
-analytics_response = requests.get(f"{API_BASE}/analytics/", params=params)
+# --- Analytics Data from backend ---
+analytics_response = requests.get(f"{API_BASE}/analytics/", params=params, headers={"access_token": API_KEY})
 df = pd.DataFrame(analytics_response.json())
 
 if df.empty:
     st.warning("No data found for selected filters.")
     st.stop()
 
-# --- Top Hashtags ---
+# --- Top Hashtags Section ---
 st.subheader("🏷️ Top Hashtags")
-tags_resp = requests.get(f"{API_BASE}/top_hashtags/", params={**params, "limit": 10})
+tags_resp = requests.get(f"{API_BASE}/top_hashtags/", params={**params, "limit": 10}, headers={"access_token": API_KEY})
 tags_dict = tags_resp.json()
 if tags_dict:
     st.dataframe(pd.DataFrame(list(tags_dict.items()), columns=["Hashtag", "Count"]), use_container_width=True)
 else:
     st.info("No hashtags found for selected filters.")
 
-# --- Top Users ---
+# --- Top Users Section ---
 st.subheader("👤 Top Users")
-users_resp = requests.get(f"{API_BASE}/top_users/", params={**params, "limit": 10})
+users_resp = requests.get(f"{API_BASE}/top_users/", params={**params, "limit": 10}, headers={"access_token": API_KEY})
 users_dict = users_resp.json()
 if users_dict:
     st.dataframe(pd.DataFrame(list(users_dict.items()), columns=["User ID", "Tweet Count"]), use_container_width=True)
@@ -59,8 +88,8 @@ else:
 # --- Sentiment Distribution Pie Chart ---
 st.subheader("Sentiment Distribution (Pie Chart)")
 tweets_params = params.copy()
-tweets_params["limit"] = 1000  # For more accuracy in pie chart and word cloud
-tweets_response = requests.get(f"{API_BASE}/latest_tweets/", params=tweets_params)
+tweets_params["limit"] = 1000  # For more representative pie/wordcloud
+tweets_response = requests.get(f"{API_BASE}/latest_tweets/", params=tweets_params, headers={"access_token": API_KEY})
 tweet_list = tweets_response.json()
 tweet_df = pd.DataFrame(tweet_list)
 if not tweet_df.empty and 'sentiment_label' in tweet_df.columns:
@@ -77,7 +106,7 @@ if not tweet_df.empty and 'sentiment_label' in tweet_df.columns:
 else:
     st.info("No tweets for sentiment pie chart.")
 
-# --- Tweet Volume Over Time (by Sentiment) ---
+# --- Tweet Volume Over Time Chart (by Sentiment) ---
 st.subheader("Tweet Volume Over Time (by Sentiment)")
 if not df.empty:
     vol_df = df.groupby(['date']).agg(
@@ -92,7 +121,7 @@ if not df.empty:
     fig.update_layout(title="Tweet Volume Over Time", xaxis_title="Date", yaxis_title="Count")
     st.plotly_chart(fig, use_container_width=True)
 
-# --- Most Positive/Negative Tweets ---
+# --- Most Positive/Negative Tweets Display ---
 st.subheader("🌟 Most Positive/Negative Tweets")
 if not tweet_df.empty and 'sentiment_label' in tweet_df.columns:
     pos_tweet = tweet_df[tweet_df['sentiment_label'] == 'POSITIVE'].sort_values("created_at", ascending=False).head(1)
