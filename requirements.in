@@ -21,6 +21,8 @@ uvicorn
 # Dashboard and Visualization
 streamlit
 plotly
+wordcloud 
+matplotlib
 
 # Developer Tools & Testing
 pytest
