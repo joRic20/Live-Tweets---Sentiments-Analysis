@@ -1,0 +1,27 @@
+# Ingestion (Twitter stream → MongoDB)
+tweepy
+pymongo
+
+# Environment variable support
+python-dotenv
+
+# Sentiment Analysis (Hugging Face RoBERTa/BERT)
+transformers
+torch
+
+# ETL/Aggregation (MongoDB ↔ PostgreSQL)
+pandas
+sqlalchemy
+psycopg2-binary
+
+# Backend API
+fastapi
+uvicorn
+
+# Dashboard and Visualization
+streamlit
+plotly
+
+# Developer Tools & Testing
+pytest
+ipython
