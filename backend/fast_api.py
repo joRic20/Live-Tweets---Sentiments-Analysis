@@ -12,12 +12,47 @@ from sqlalchemy import create_engine, text                     # For Postgres co
 from pymongo import MongoClient                                # For MongoDB connection
 import subprocess                                              # For running scripts
 import os                                                      # For environment variables
+import sys                                                     # For system exit
+import logging                                                 # For logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # --- Load secrets and config from .env ---
 load_dotenv()  # Load variables from .env into the environment
 
-# Get API key for authentication, or default to "changeme" (should be set in .env)
-API_KEY = os.environ.get("API_KEY", "changeme")
+# Helper function to clean environment variables (removes inline comments)
+def clean_env_var(value):
+    """Remove inline comments and extra quotes from environment variables"""
+    if value:
+        # Remove comments if present
+        if '#' in value:
+            value = value.split('#')[0]
+        # Strip whitespace and quotes
+        value = value.strip().strip('"\'')
+    return value
+
+# Get and clean environment variables
+API_KEY = clean_env_var(os.environ.get("API_KEY", "changeme"))
+POSTGRES_URI = clean_env_var(os.environ.get("POSTGRES_URI"))
+MONGO_URI = clean_env_var(os.environ.get("MONGO_URI"))
+MONGO_DB = clean_env_var(os.environ.get("MONGO_DB"))
+MONGO_COLL = clean_env_var(os.environ.get("MONGO_COLL"))
+
+# Log configuration (without exposing sensitive data)
+logger.info(f"API Key: {'Set' if API_KEY and API_KEY != 'changeme' else 'Not Set'}")
+logger.info(f"PostgreSQL URI: {'Set' if POSTGRES_URI else 'Not Set'}")
+logger.info(f"MongoDB URI: {'Set' if MONGO_URI else 'Not Set'}")
+logger.info(f"MongoDB Database: {MONGO_DB}")
+logger.info(f"MongoDB Collection: {MONGO_COLL}")
+
+# Validate required environment variables
+if not all([POSTGRES_URI, MONGO_URI, MONGO_DB, MONGO_COLL]):
+    logger.error("Missing required environment variables!")
+    logger.error("Please ensure POSTGRES_URI, MONGO_URI, MONGO_DB, and MONGO_COLL are set in .env")
+    sys.exit(1)
+
 API_KEY_NAME = "access_token"                                  # Name of the header field for API key
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)  # FastAPI security scheme
 
@@ -70,57 +105,126 @@ def get_api_key(api_key_header: str = Security(api_key_header)):
             status_code=HTTP_403_FORBIDDEN, detail="Could not validate credentials"
         )
 
-# --- Database connections (loaded from .env) ---
-engine = create_engine(os.environ.get("POSTGRES_URI"))    # For analytics (PostgreSQL)
-MONGO_URI = os.environ.get("MONGO_URI")                   # MongoDB URI
-MONGO_DB = os.environ.get("MONGO_DB")                     # MongoDB database name
-MONGO_COLL = os.environ.get("MONGO_COLL")                 # MongoDB collection name
-mongo_client = MongoClient(MONGO_URI)                     # Connect to MongoDB
-mongo_db = mongo_client[MONGO_DB]                         # Select database
-tweets_collection = mongo_db[MONGO_COLL]                  # Select collection
+# --- Database connections ---
+try:
+    engine = create_engine(POSTGRES_URI)
+    # Test PostgreSQL connection
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+    logger.info("PostgreSQL connection successful")
+except Exception as e:
+    logger.error(f"Failed to connect to PostgreSQL: {e}")
+    logger.error(f"PostgreSQL URI format should be: postgresql://username:password@host:port/database")
+    sys.exit(1)
 
-# --- Endpoint: Trigger tweet ingestion for a term (user-provided, no default) ---
+try:
+    mongo_client = MongoClient(MONGO_URI)
+    mongo_client.server_info()
+    mongo_db = mongo_client[MONGO_DB]
+    tweets_collection = mongo_db[MONGO_COLL]
+    logger.info(f"MongoDB connection successful - Database: {MONGO_DB}, Collection: {MONGO_COLL}")
+except Exception as e:
+    logger.error(f"Failed to connect to MongoDB: {e}")
+    logger.error(f"MongoDB URI format should be: mongodb://username:password@host:port/database")
+    sys.exit(1)
+
+# --- Health check endpoint ---
+@app.get("/health")
+def health_check():
+    """Check if the API and databases are accessible"""
+    try:
+        # Check PostgreSQL
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        
+        # Check MongoDB
+        mongo_client.server_info()
+        
+        return {
+            "status": "healthy",
+            "postgres": "connected",
+            "mongodb": "connected"
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+
+# --- Endpoint: Trigger tweet ingestion for a term ---
 @app.post("/start_ingest/")
 def start_ingest(
     term: str,                                            # The search term, from request body
-    background_tasks: BackgroundTasks,                    # Background task handler (so API doesn't block)
+    background_tasks: BackgroundTasks,                    # Background task handler
     api_key: APIKey = Depends(get_api_key)                # Require valid API key
 ):
     """
     Starts tweet ingestion for a new search term (runs ingest.py as background task).
     """
+    logger.info(f"Starting ingestion for term: {term}")
+    
     def run_ingest():
-        # Call ingest.py as a subprocess, passing the term as an argument
-        # Assumes ingest.py is in the same directory as this file
-        subprocess.run(["python", "ingest.py", term])
+        try:
+            # Call ingest.py as a subprocess
+            result = subprocess.run(["python", "ingest.py", term], capture_output=True, text=True)
+            if result.returncode != 0:
+                logger.error(f"Ingestion failed for {term}: {result.stderr}")
+            else:
+                logger.info(f"Ingestion completed for {term}")
+        except Exception as e:
+            logger.error(f"Failed to run ingestion: {e}")
+    
     # Register the ingestion function to run in the background
     background_tasks.add_task(run_ingest)
-    # Return immediately; ingestion will run in the background
     return {"status": "ingestion started", "term": term}
 
-# --- Endpoint: List all campaigns tracked (from Postgres) ---
+# --- Endpoint: List all campaigns tracked ---
 @app.get("/campaigns/")
 def get_campaigns(api_key: APIKey = Depends(get_api_key)):
     """
     Returns a list of all unique campaigns (for dashboard filter).
     """
-    q = "SELECT DISTINCT campaign FROM tweet_analytics ORDER BY campaign;"
-    campaigns = pd.read_sql(q, engine)['campaign'].tolist()
-    return campaigns
+    try:
+        q = "SELECT DISTINCT campaign FROM tweet_analytics ORDER BY campaign;"
+        campaigns = pd.read_sql(q, engine)['campaign'].tolist()
+        return campaigns
+    except Exception as e:
+        logger.error(f"Error fetching campaigns: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch campaigns")
 
-# --- Endpoint: Get min and max date in analytics (from Postgres) ---
+# --- Endpoint: Get min and max date in analytics ---
 @app.get("/date_range/")
 def get_min_max_dates(api_key: APIKey = Depends(get_api_key)):
     """
     Returns the earliest and latest dates in the analytics table.
     """
-    q = "SELECT MIN(date) as min_date, MAX(date) as max_date FROM tweet_analytics;"
-    result = pd.read_sql(q, engine)
-    d = result.iloc[0].to_dict()
-    d = {k: str(v) for k, v in d.items()}  # Convert to string for JSON serialization
-    return d
+    try:
+        q = "SELECT MIN(date) as min_date, MAX(date) as max_date FROM tweet_analytics;"
+        result = pd.read_sql(q, engine)
+        
+        # Handle empty table
+        if result.iloc[0]['min_date'] is None:
+            import datetime
+            today = datetime.date.today()
+            return {
+                "min_date": str(today - datetime.timedelta(days=7)),
+                "max_date": str(today)
+            }
+        
+        d = result.iloc[0].to_dict()
+        d = {k: str(v) for k, v in d.items()}  # Convert to string for JSON serialization
+        return d
+    except Exception as e:
+        logger.error(f"Error fetching date range: {e}")
+        # Return default date range on error
+        import datetime
+        today = datetime.date.today()
+        return {
+            "min_date": str(today - datetime.timedelta(days=7)),
+            "max_date": str(today)
+        }
 
-# --- Endpoint: Aggregated analytics for selected campaigns and date range (from Postgres) ---
+# --- Endpoint: Aggregated analytics for selected campaigns and date range ---
 @app.get("/analytics/")
 def analytics(
     campaigns: str = Query(..., description="Comma-separated campaign names"),
@@ -131,20 +235,24 @@ def analytics(
     """
     Returns aggregated analytics for selected campaigns and date range.
     """
-    # Parse comma-separated campaigns into a list
-    campaign_list = [c.strip() for c in campaigns.split(",")]
-    # Query analytics table for stats per campaign and day
-    query = text("""
-        SELECT campaign, date, avg_sentiment, tweet_count, pos_count, neu_count, neg_count
-        FROM tweet_analytics
-        WHERE campaign IN :campaigns
-          AND date BETWEEN :start AND :end
-        ORDER BY campaign, date;
-    """)
-    df = pd.read_sql(query, engine, params={"campaigns": tuple(campaign_list), "start": start, "end": end})
-    return df.to_dict(orient="records")
+    try:
+        # Parse comma-separated campaigns into a list
+        campaign_list = [c.strip() for c in campaigns.split(",")]
+        # Query analytics table for stats per campaign and day
+        query = text("""
+            SELECT campaign, date, avg_sentiment, tweet_count, pos_count, neu_count, neg_count
+            FROM tweet_analytics
+            WHERE campaign IN :campaigns
+              AND date BETWEEN :start AND :end
+            ORDER BY campaign, date;
+        """)
+        df = pd.read_sql(query, engine, params={"campaigns": tuple(campaign_list), "start": start, "end": end})
+        return df.to_dict(orient="records")
+    except Exception as e:
+        logger.error(f"Error fetching analytics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch analytics")
 
-# --- Endpoint: Latest tweets with sentiment for selected campaigns/date range (from MongoDB) ---
+# --- Endpoint: Latest tweets with sentiment for selected campaigns/date range ---
 @app.get("/latest_tweets/")
 def latest_tweets(
     campaigns: str = Query(..., description="Comma-separated campaign names"),
@@ -156,19 +264,93 @@ def latest_tweets(
     """
     Returns latest tweets (with sentiment) for colored table/word cloud.
     """
-    # Parse campaigns for MongoDB filter
-    campaign_list = [c.strip() for c in campaigns.split(",")]
-    query_mongo = {
-        "matched_term": {"$in": campaign_list},
-        "created_at": {"$gte": start, "$lte": end}
-    }
-    fields = {"text": 1, "sentiment_label": 1, "created_at": 1}
-    # Find latest tweets matching the campaigns and time window
-    tweets = list(tweets_collection.find(query_mongo, fields).sort("created_at", -1).limit(limit))
-    # Convert date for JSON and remove MongoDB's _id field
-    for t in tweets:
-        if "created_at" in t:
-            t["created_at"] = str(t["created_at"])
-        if "_id" in t:
-            t.pop("_id")
-    return tweets
+    try:
+        # Parse campaigns for MongoDB filter
+        campaign_list = [c.strip() for c in campaigns.split(",")]
+        query_mongo = {
+            "matched_term": {"$in": campaign_list},
+            "created_at": {"$gte": start, "$lte": end}
+        }
+        fields = {"text": 1, "sentiment_label": 1, "created_at": 1}
+        # Find latest tweets matching the campaigns and time window
+        tweets = list(tweets_collection.find(query_mongo, fields).sort("created_at", -1).limit(limit))
+        # Convert date for JSON and remove MongoDB's _id field
+        for t in tweets:
+            if "created_at" in t:
+                t["created_at"] = str(t["created_at"])
+            if "_id" in t:
+                t.pop("_id")
+        return tweets
+    except Exception as e:
+        logger.error(f"Error fetching tweets: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch tweets")
+
+# --- Endpoint: Top hashtags ---
+@app.get("/top_hashtags/")
+def top_hashtags(
+    campaigns: str = Query(..., description="Comma-separated campaign names"),
+    start: str = Query(..., description="Start date YYYY-MM-DD"),
+    end: str = Query(..., description="End date YYYY-MM-DD"),
+    limit: int = Query(10, description="Number of top hashtags"),
+    api_key: APIKey = Depends(get_api_key)
+):
+    """
+    Returns top hashtags for selected campaigns and date range.
+    """
+    try:
+        campaign_list = [c.strip() for c in campaigns.split(",")]
+        # MongoDB aggregation pipeline for hashtag counts
+        pipeline = [
+            {
+                "$match": {
+                    "matched_term": {"$in": campaign_list},
+                    "created_at": {"$gte": start, "$lte": end},
+                    "hashtags": {"$exists": True, "$ne": []}
+                }
+            },
+            {"$unwind": "$hashtags"},
+            {"$group": {"_id": "$hashtags", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": limit}
+        ]
+        results = list(tweets_collection.aggregate(pipeline))
+        return {item["_id"]: item["count"] for item in results}
+    except Exception as e:
+        logger.error(f"Error fetching hashtags: {e}")
+        return {}
+
+# --- Endpoint: Top users ---
+@app.get("/top_users/")
+def top_users(
+    campaigns: str = Query(..., description="Comma-separated campaign names"),
+    start: str = Query(..., description="Start date YYYY-MM-DD"),
+    end: str = Query(..., description="End date YYYY-MM-DD"),
+    limit: int = Query(10, description="Number of top users"),
+    api_key: APIKey = Depends(get_api_key)
+):
+    """
+    Returns top users for selected campaigns and date range.
+    """
+    try:
+        campaign_list = [c.strip() for c in campaigns.split(",")]
+        # MongoDB aggregation pipeline for user tweet counts
+        pipeline = [
+            {
+                "$match": {
+                    "matched_term": {"$in": campaign_list},
+                    "created_at": {"$gte": start, "$lte": end}
+                }
+            },
+            {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": limit}
+        ]
+        results = list(tweets_collection.aggregate(pipeline))
+        return {str(item["_id"]): item["count"] for item in results}
+    except Exception as e:
+        logger.error(f"Error fetching users: {e}")
+        return {}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

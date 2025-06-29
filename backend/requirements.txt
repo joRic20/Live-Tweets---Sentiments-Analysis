@@ -221,10 +221,6 @@ stack-data==0.6.3
 starlette==0.46.2
     # via fastapi
 streamlit==1.46.1
-    # via
-    #   -r requirements.in
-    #   streamlit-autorefresh
-streamlit-autorefresh==1.0.1
     # via -r requirements.in
 sympy==1.14.0
     # via torch

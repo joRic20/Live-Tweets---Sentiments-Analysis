@@ -1,0 +1,73 @@
+# .dockerignore
+# Ignore files that shouldn't be copied into Docker images
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Environment and secrets
+.env
+.env.*
+*.env
+!.env.example
+
+# Version control
+.git/
+.gitignore
+.github/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+README.md
+docs/
+*.md
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Logs
+*.log
+logs/
+
+# Data files (don't include in image)
+*.csv
+*.json
+*.db
+*.sqlite
+data/
+
+# Node (if any frontend)
+node_modules/
+npm-debug.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+
+# OS files
+Thumbs.db

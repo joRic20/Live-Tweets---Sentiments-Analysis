@@ -30,3 +30,4 @@ scikit-learn
 # Developer Tools & Testing
 pytest
 ipython
+streamlit-autorefresh

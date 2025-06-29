@@ -5,9 +5,36 @@ import plotly.graph_objects as go               # For plotting charts
 from wordcloud import WordCloud                 # For generating word clouds
 import matplotlib.pyplot as plt                 # For plotting word cloud
 from streamlit_autorefresh import st_autorefresh # For auto-refreshing dashboard
+import os                                       # For environment variable access
+import sys                                      # For system exit if config is bad
 
-API_BASE = os.environ.get("API_BASE")              # Base URL for FastAPI backend (change if hosted remotely)
-API_KEY = os.environ.get("API_KEY")                     # <-- Set your API key here, or load from st.secrets/env
+# Helper function to clean environment variables (removes inline comments)
+def clean_env_var(value):
+    """Remove inline comments and extra quotes from environment variables"""
+    if value:
+        # Remove comments if present
+        if '#' in value:
+            value = value.split('#')[0]
+        # Strip whitespace and quotes
+        value = value.strip().strip('"\'')
+    return value
+
+# Get and clean environment variables
+API_BASE = clean_env_var(os.environ.get("API_BASE"))
+API_KEY = clean_env_var(os.environ.get("API_KEY"))
+
+# Validate configuration
+if not API_BASE:
+    st.error("❌ API_BASE environment variable is not set!")
+    st.info("Please set API_BASE in your .env file (e.g., API_BASE=http://backend:8000)")
+    st.stop()
+
+if not API_KEY:
+    st.warning("⚠️ API_KEY is not set. Some features may not work.")
+
+# Log configuration for debugging (without exposing full API key)
+st.sidebar.text(f"API Base: {API_BASE}")
+st.sidebar.text(f"API Key: {'Set' if API_KEY else 'Not Set'}")
 
 st.set_page_config(page_title="Campaign Sentiment Analytics", layout="wide")
 st.title("📊 Campaign Sentiment Analytics Dashboard")
@@ -28,40 +55,78 @@ if st.sidebar.button("Start Tracking"):
             resp = requests.post(
                 f"{API_BASE}/start_ingest/",
                 json={"term": new_term},
-                headers={"access_token": API_KEY}
+                headers={"access_token": API_KEY} if API_KEY else {},
+                timeout=10  # Add timeout
             )
             if resp.status_code == 200:
                 st.sidebar.success(f"Ingestion started for: {new_term}")
             else:
-                st.sidebar.error(f"Failed to start ingestion. {resp.text}")
+                st.sidebar.error(f"Failed to start ingestion. Status: {resp.status_code}, Response: {resp.text}")
+        except requests.exceptions.ConnectionError:
+            st.sidebar.error(f"Cannot connect to backend at {API_BASE}. Is the backend service running?")
         except Exception as e:
             st.sidebar.error(f"Error contacting backend: {e}")
 
 # --- Helper: Fetch campaign options for the multi-select ---
-@st.cache_data
+@st.cache_data(ttl=60)
 def fetch_campaigns():
-    # Fetch list of available campaigns from backend
-    return requests.get(f"{API_BASE}/campaigns/", headers={"access_token": API_KEY}).json()
+    """Fetch list of available campaigns from backend"""
+    try:
+        headers = {"access_token": API_KEY} if API_KEY else {}
+        resp = requests.get(f"{API_BASE}/campaigns/", headers=headers, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.ConnectionError:
+        st.error(f"Cannot connect to backend at {API_BASE}")
+        return []
+    except Exception as e:
+        st.error(f"Error fetching campaigns: {e}")
+        return []
 
 # --- Helper: Fetch date range for filtering ---
-@st.cache_data
+@st.cache_data(ttl=60)
 def fetch_date_range():
-    # Get min/max date in the analytics DB
-    dates = requests.get(f"{API_BASE}/date_range/", headers={"access_token": API_KEY}).json()
-    return pd.to_datetime(dates['min_date']).date(), pd.to_datetime(dates['max_date']).date()
+    """Get min/max date in the analytics DB"""
+    try:
+        headers = {"access_token": API_KEY} if API_KEY else {}
+        resp = requests.get(f"{API_BASE}/date_range/", headers=headers, timeout=10)
+        resp.raise_for_status()
+        dates = resp.json()
+        return pd.to_datetime(dates['min_date']).date(), pd.to_datetime(dates['max_date']).date()
+    except Exception as e:
+        st.error(f"Error fetching date range: {e}")
+        # Return default date range if API fails
+        import datetime
+        today = datetime.date.today()
+        return today - datetime.timedelta(days=7), today
 
 # --- Sidebar campaign/date filters ---
 campaigns = fetch_campaigns()
+if not campaigns:
+    st.warning("No campaigns found. Please start tracking a campaign using the sidebar.")
+    st.stop()
+
 min_date, max_date = fetch_date_range()
 selected_campaigns = st.sidebar.multiselect(
     "Select Campaign(s)", campaigns, default=campaigns[:2] if len(campaigns) > 1 else campaigns)
+
+if not selected_campaigns:
+    st.info("Please select at least one campaign from the sidebar.")
+    st.stop()
+
 date_range = st.sidebar.date_input(
     "Date Range", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 params = {"campaigns": ",".join(selected_campaigns), "start": str(date_range[0]), "end": str(date_range[1])}
 
 # --- Analytics Data from backend ---
-analytics_response = requests.get(f"{API_BASE}/analytics/", params=params, headers={"access_token": API_KEY})
-df = pd.DataFrame(analytics_response.json())
+try:
+    headers = {"access_token": API_KEY} if API_KEY else {}
+    analytics_response = requests.get(f"{API_BASE}/analytics/", params=params, headers=headers, timeout=10)
+    analytics_response.raise_for_status()
+    df = pd.DataFrame(analytics_response.json())
+except Exception as e:
+    st.error(f"Error fetching analytics: {e}")
+    st.stop()
 
 if df.empty:
     st.warning("No data found for selected filters.")
@@ -69,42 +134,59 @@ if df.empty:
 
 # --- Top Hashtags Section ---
 st.subheader("🏷️ Top Hashtags")
-tags_resp = requests.get(f"{API_BASE}/top_hashtags/", params={**params, "limit": 10}, headers={"access_token": API_KEY})
-tags_dict = tags_resp.json()
-if tags_dict:
-    st.dataframe(pd.DataFrame(list(tags_dict.items()), columns=["Hashtag", "Count"]), use_container_width=True)
-else:
-    st.info("No hashtags found for selected filters.")
+try:
+    headers = {"access_token": API_KEY} if API_KEY else {}
+    tags_resp = requests.get(f"{API_BASE}/top_hashtags/", params={**params, "limit": 10}, headers=headers, timeout=10)
+    tags_resp.raise_for_status()
+    tags_dict = tags_resp.json()
+    if tags_dict:
+        st.dataframe(pd.DataFrame(list(tags_dict.items()), columns=["Hashtag", "Count"]), use_container_width=True)
+    else:
+        st.info("No hashtags found for selected filters.")
+except Exception as e:
+    st.error(f"Error fetching hashtags: {e}")
 
 # --- Top Users Section ---
 st.subheader("👤 Top Users")
-users_resp = requests.get(f"{API_BASE}/top_users/", params={**params, "limit": 10}, headers={"access_token": API_KEY})
-users_dict = users_resp.json()
-if users_dict:
-    st.dataframe(pd.DataFrame(list(users_dict.items()), columns=["User ID", "Tweet Count"]), use_container_width=True)
-else:
-    st.info("No users found for selected filters.")
+try:
+    headers = {"access_token": API_KEY} if API_KEY else {}
+    users_resp = requests.get(f"{API_BASE}/top_users/", params={**params, "limit": 10}, headers=headers, timeout=10)
+    users_resp.raise_for_status()
+    users_dict = users_resp.json()
+    if users_dict:
+        st.dataframe(pd.DataFrame(list(users_dict.items()), columns=["User ID", "Tweet Count"]), use_container_width=True)
+    else:
+        st.info("No users found for selected filters.")
+except Exception as e:
+    st.error(f"Error fetching users: {e}")
 
 # --- Sentiment Distribution Pie Chart ---
 st.subheader("Sentiment Distribution (Pie Chart)")
-tweets_params = params.copy()
-tweets_params["limit"] = 1000  # For more representative pie/wordcloud
-tweets_response = requests.get(f"{API_BASE}/latest_tweets/", params=tweets_params, headers={"access_token": API_KEY})
-tweet_list = tweets_response.json()
-tweet_df = pd.DataFrame(tweet_list)
-if not tweet_df.empty and 'sentiment_label' in tweet_df.columns:
-    sentiment_counts = tweet_df['sentiment_label'].value_counts()
-    pie_fig = go.Figure(
-        data=[go.Pie(
-            labels=sentiment_counts.index,
-            values=sentiment_counts.values,
-            marker=dict(colors=['green', 'gray', 'red']),
-            hole=.3
-        )]
-    )
-    st.plotly_chart(pie_fig, use_container_width=True)
-else:
-    st.info("No tweets for sentiment pie chart.")
+try:
+    headers = {"access_token": API_KEY} if API_KEY else {}
+    tweets_params = params.copy()
+    tweets_params["limit"] = 1000  # For more representative pie/wordcloud
+    tweets_response = requests.get(f"{API_BASE}/latest_tweets/", params=tweets_params, headers=headers, timeout=10)
+    tweets_response.raise_for_status()
+    tweet_list = tweets_response.json()
+    tweet_df = pd.DataFrame(tweet_list)
+    
+    if not tweet_df.empty and 'sentiment_label' in tweet_df.columns:
+        sentiment_counts = tweet_df['sentiment_label'].value_counts()
+        pie_fig = go.Figure(
+            data=[go.Pie(
+                labels=sentiment_counts.index,
+                values=sentiment_counts.values,
+                marker=dict(colors=['green', 'gray', 'red']),
+                hole=.3
+            )]
+        )
+        st.plotly_chart(pie_fig, use_container_width=True)
+    else:
+        st.info("No tweets for sentiment pie chart.")
+except Exception as e:
+    st.error(f"Error fetching tweets: {e}")
+    tweet_df = pd.DataFrame()  # Empty dataframe for later sections
 
 # --- Tweet Volume Over Time Chart (by Sentiment) ---
 st.subheader("Tweet Volume Over Time (by Sentiment)")

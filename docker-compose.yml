@@ -1,82 +1,221 @@
-# Use Docker Compose version 3.9 syntax (recommended for modern setups)
+# Specify the Docker Compose file format version (3.9 is stable and widely supported)
 version: '3.9'
 
-# Define all services (containers) in your workflow
+# Define all containers/services that make up your application
 services:
-  # MongoDB database for raw tweets and storage
+  
+  # MongoDB database service for storing raw tweet data
   mongo:
-    image: mongo:6               # Use official MongoDB version 6
-    restart: always              # Restart automatically if stopped
+    # Use the official MongoDB version 6 image from Docker Hub
+    image: mongo:6
+    # Give this container a custom name for easier management
+    container_name: twitter-mongo
+    # Restart policy: restart unless manually stopped (survives system reboots)
+    restart: unless-stopped
+    # Port mapping - expose container port 27017 to host port 27017
     ports:
-      - "27017:27017"            # Expose MongoDB on localhost:27017
+      - "27017:27017"  # Format: "host_port:container_port"
+    # Mount a named volume to persist database files between container restarts
     volumes:
-      - mongo_data:/data/db      # Persist MongoDB data on your machine
+      - mongo_data:/data/db  # mongo_data volume is mounted to MongoDB's data directory
+    # Connect this service to our custom network for inter-container communication
+    networks:
+      - twitter-network
+    # Health check configuration to monitor if MongoDB is responding
+    healthcheck:
+      # Command to check if MongoDB is healthy - runs 'ping' command in MongoDB shell
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      # Check health every 10 seconds
+      interval: 10s
+      # Fail if health check takes longer than 5 seconds
+      timeout: 5s
+      # Mark unhealthy after 5 consecutive failures
+      retries: 5
+      # Wait 30 seconds before starting health checks (gives DB time to initialize)
+      start_period: 30s
 
-  # PostgreSQL database for analytics/aggregates
+  # PostgreSQL database service for storing aggregated analytics data
   postgres:
-    image: postgres:15           # Use official PostgreSQL version 15
-    restart: always
-    environment:                 # Set environment vars for DB setup
-      POSTGRES_DB: tweetdb
-      POSTGRES_USER: joric
-      POSTGRES_PASSWORD: tweet
+    # Use the official PostgreSQL version 15 image from Docker Hub
+    image: postgres:15
+    # Give this container a custom name for easier management
+    container_name: twitter-postgres
+    # Restart policy: restart unless manually stopped
+    restart: unless-stopped
+    # Environment variables for PostgreSQL initialization
+    environment:
+      # Database name - value comes from .env file
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Database username - value comes from .env file
+      POSTGRES_USER: ${POSTGRES_USER}
+      # Database password - value comes from .env file
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # Port mapping - expose container port 5432 to host port 5432
     ports:
-      - "5432:5432"              # Expose Postgres on localhost:5432
+      - "5432:5432"  # PostgreSQL default port
+    # Mount a named volume to persist database files
     volumes:
-      - postgres_data:/var/lib/postgresql/data # Persist Postgres data
+      - postgres_data:/var/lib/postgresql/data  # PostgreSQL's data directory
+    # Connect to custom network
+    networks:
+      - twitter-network
+    # Health check using PostgreSQL's built-in pg_isready command
+    healthcheck:
+      # Check if PostgreSQL is ready to accept connections
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      # Check every 10 seconds
+      interval: 10s
+      # Timeout after 5 seconds
+      timeout: 5s
+      # Retry 5 times before marking unhealthy
+      retries: 5
+      # Wait 30 seconds before first check
+      start_period: 30s
 
-  # FastAPI backend service for analytics API
+  # FastAPI backend service that provides REST API endpoints
   backend:
-    build: ./backend             # Build Docker image from backend directory
-    command: uvicorn fast_api:app --host 0.0.0.0 --port 8000 --reload
-    environment:
-      - API_KEY=${API_KEY}       # Use API key from .env
-      - POSTGRES_URI=${POSTGRES_URI}
-      - MONGO_URI=${MONGO_URI}
-      - MONGO_DB=${MONGO_DB}
-      - MONGO_COLL=${MONGO_COLL}
-    ports:
-      - "8000:8000"              # Expose backend API at localhost:8000
-    depends_on:
-      - mongo                    # Start after Mongo is ready
-      - postgres                 # Start after Postgres is ready
-    volumes:
-      - ./backend:/app           # Mount backend code for live reloading
-      - ../requirements.txt:/app/requirements.txt
-
-  # Streamlit dashboard for interactive visualization
-  dashboard:
-    build: .                     # Build from project root (or ./dashboard if you separate)
-    command: streamlit run dashboard/dashboard.py --server.port 8501
-    environment:
-      - API_KEY=${API_KEY}
-      - POSTGRES_URI=${POSTGRES_URI}
-      - MONGO_URI=${MONGO_URI}
-      - MONGO_DB=${MONGO_DB}
-      - MONGO_COLL=${MONGO_COLL}
-    ports:
-      - "8501:8501"              # Expose Streamlit dashboard at localhost:8501
-    depends_on:
-      - backend                  # Wait for backend to be up
-    volumes:
-      - .:/app                   # Mount full project for code access
-
-  # ETL (Extract-Transform-Load) for processing/sentiment
-  etl:
+    # Build image from Dockerfile in ./backend directory
     build: ./backend
-    command: python etl.py       # Run ETL process
+    # Custom container name
+    container_name: twitter-backend
+    # Restart unless stopped manually
+    restart: unless-stopped
+    # Override default command to run Uvicorn server with hot-reload enabled
+    command: uvicorn fast_api:app --host 0.0.0.0 --port 8000 --reload
+    # Environment variables passed to the container
     environment:
-      - POSTGRES_URI=${POSTGRES_URI}
-      - MONGO_URI=${MONGO_URI}
-      - MONGO_DB=${MONGO_DB}
-      - MONGO_COLL=${MONGO_COLL}
+      # API authentication key from .env file
+      API_KEY: ${API_KEY}
+      # PostgreSQL connection string from .env file
+      POSTGRES_URI: ${POSTGRES_URI}
+      # MongoDB connection string from .env file
+      MONGO_URI: mongodb://mongo:27017/twitter_stream
+      # MongoDB database name from .env file
+      MONGO_DB: twitter_stream
+      # MongoDB collection name from .env file
+      MONGO_COLL: tweets
+    # Expose FastAPI on port 8000
+    ports:
+      - "8000:8000"
+    # Wait for databases to be healthy before starting
     depends_on:
-      - mongo
-      - postgres
+      # Wait for MongoDB health check to pass
+      mongo:
+        condition: service_healthy
+      # Wait for PostgreSQL health check to pass
+      postgres:
+        condition: service_healthy
+    # Mount local backend directory for development (enables hot-reload)
     volumes:
-      - ./backend:/app
+      - ./backend:/app  # Local ./backend directory mounted to container's /app
+    # Connect to custom network
+    networks:
+      - twitter-network
+    # Health check by calling the API's /health endpoint
+    healthcheck:
+      # Use curl to check if API is responding
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # Check every 30 seconds
+      interval: 30s
+      # Timeout after 10 seconds
+      timeout: 10s
+      # Retry 3 times
+      retries: 3
+      # Wait 40 seconds for API to fully start
+      start_period: 40s
 
-# Define persistent data volumes for databases
+  # Streamlit dashboard service for data visualization
+  dashboard:
+    # Build image from Dockerfile in ./dashboard directory
+    build: ./dashboard
+    # Custom container name
+    container_name: twitter-dashboard
+    # Restart unless stopped manually
+    restart: unless-stopped
+    # Run Streamlit with specific port and address settings
+    command: streamlit run dashboard.py --server.port 8501 --server.address 0.0.0.0
+    # Environment variables for dashboard configuration
+    environment:
+      # Backend API URL from .env file
+      API_BASE: ${API_BASE}
+      # API authentication key from .env file
+      API_KEY: ${API_KEY}
+      # Database connection strings (may be used for direct queries)
+      POSTGRES_URI: ${POSTGRES_URI}
+      MONGO_URI: ${MONGO_URI}
+      MONGO_DB: ${MONGO_DB}
+      MONGO_COLL: ${MONGO_COLL}
+    # Expose Streamlit on port 8501
+    ports:
+      - "8501:8501"  # Streamlit default port
+    # Wait for backend API to be healthy before starting
+    depends_on:
+      backend:
+        condition: service_healthy
+    # Mount local dashboard directory for development
+    volumes:
+      - ./dashboard:/app  # Enables live code updates
+    # Connect to custom network
+    networks:
+      - twitter-network
+    # Health check using Streamlit's internal health endpoint
+    healthcheck:
+      # Check Streamlit's health status endpoint
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      # Check every 30 seconds
+      interval: 30s
+      # Timeout after 10 seconds
+      timeout: 10s
+      # Retry 3 times
+      retries: 3
+      # Wait 40 seconds for Streamlit to initialize
+      start_period: 40s
+
+  # ETL service for batch processing and sentiment analysis
+  etl:
+    # Build from same Dockerfile as backend (shares code)
+    build: ./backend
+    # Custom container name
+    container_name: twitter-etl
+    # Don't restart - this is a one-time job that exits when complete
+    restart: "no"
+    # Run the ETL Python script
+    command: python etl.py
+    # Environment variables for database connections
+    environment:
+      # PostgreSQL connection for writing analytics
+      POSTGRES_URI: ${POSTGRES_URI}
+      # MongoDB connection for reading tweets
+      MONGO_URI: ${MONGO_URI}
+      # MongoDB database name
+      MONGO_DB: ${MONGO_DB}
+      # MongoDB collection name
+      MONGO_COLL: ${MONGO_COLL}
+    # Wait for both databases to be healthy
+    depends_on:
+      # Need MongoDB to read tweets
+      mongo:
+        condition: service_healthy
+      # Need PostgreSQL to write analytics
+      postgres:
+        condition: service_healthy
+    # Mount backend code directory
+    volumes:
+      - ./backend:/app  # ETL script is in backend directory
+    # Connect to custom network
+    networks:
+      - twitter-network
+
+# Define custom network for all services to communicate
+networks:
+  # Create a custom bridge network for container isolation
+  twitter-network:
+    # Use default bridge driver for local container communication
+    driver: bridge
+
+# Define named volumes for data persistence
 volumes:
+  # Volume for MongoDB data files - survives container removal
   mongo_data:
+  # Volume for PostgreSQL data files - survives container removal  
   postgres_data:
