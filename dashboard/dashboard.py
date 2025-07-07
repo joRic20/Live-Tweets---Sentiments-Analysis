@@ -118,6 +118,11 @@ date_range = st.sidebar.date_input(
     "Date Range", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 params = {"campaigns": ",".join(selected_campaigns), "start": str(date_range[0]), "end": str(date_range[1])}
 
+# --- Display Options in Sidebar ---
+st.sidebar.markdown("### 📊 Display Options")
+show_original_tweets = st.sidebar.checkbox("Show original tweets (with URLs)", value=False)
+st.sidebar.info("Cleaned tweets have URLs, RT prefixes, and spam removed for better analysis")
+
 # --- Analytics Data from backend ---
 try:
     headers = {"access_token": API_KEY} if API_KEY else {}
@@ -188,6 +193,32 @@ except Exception as e:
     st.error(f"Error fetching tweets: {e}")
     tweet_df = pd.DataFrame()  # Empty dataframe for later sections
 
+# --- Data Cleaning Statistics (if we have cleaned data) ---
+if not tweet_df.empty and 'cleaned_text' in tweet_df.columns and 'text' in tweet_df.columns:
+    st.subheader("🧹 Data Cleaning Impact")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    # Calculate statistics
+    original_lengths = tweet_df['text'].str.len()
+    cleaned_lengths = tweet_df['cleaned_text'].str.len()
+    
+    with col1:
+        avg_original = original_lengths.mean()
+        st.metric("Avg Original Length", f"{avg_original:.0f} chars")
+    
+    with col2:
+        avg_cleaned = cleaned_lengths.mean()
+        st.metric("Avg Cleaned Length", f"{avg_cleaned:.0f} chars")
+    
+    with col3:
+        reduction = ((avg_original - avg_cleaned) / avg_original) * 100
+        st.metric("Avg Reduction", f"{reduction:.1f}%")
+    
+    with col4:
+        # Count tweets with URLs
+        url_count = tweet_df['text'].str.contains(r'http[s]?://|www\.', regex=True).sum()
+        st.metric("Tweets with URLs", f"{url_count} ({url_count/len(tweet_df)*100:.1f}%)")
+
 # --- Tweet Volume Over Time Chart (by Sentiment) ---
 st.subheader("Tweet Volume Over Time (by Sentiment)")
 if not df.empty:
@@ -204,14 +235,37 @@ if not df.empty:
     st.plotly_chart(fig, use_container_width=True)
 
 # --- Most Positive/Negative Tweets Display ---
-st.subheader("🌟 Most Positive/Negative Tweets")
+st.subheader("🌟 Example Positive/Negative Tweets")
 if not tweet_df.empty and 'sentiment_label' in tweet_df.columns:
-    pos_tweet = tweet_df[tweet_df['sentiment_label'] == 'POSITIVE'].sort_values("created_at", ascending=False).head(1)
-    neg_tweet = tweet_df[tweet_df['sentiment_label'] == 'NEGATIVE'].sort_values("created_at", ascending=False).head(1)
-    if not pos_tweet.empty:
-        st.success(f"Most Recent Positive Tweet: {pos_tweet.iloc[0]['text']}")
-    if not neg_tweet.empty:
-        st.error(f"Most Recent Negative Tweet: {neg_tweet.iloc[0]['text']}")
+    # Get most positive and negative tweets
+    pos_tweets = tweet_df[tweet_df['sentiment_label'] == 'POSITIVE'].sort_values("sentiment_score", ascending=False)
+    neg_tweets = tweet_df[tweet_df['sentiment_label'] == 'NEGATIVE'].sort_values("sentiment_score", ascending=False)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if not pos_tweets.empty:
+            st.success("**Most Positive Tweet:**")
+            pos_tweet = pos_tweets.iloc[0]
+            # Use cleaned text if available and not showing original
+            if 'cleaned_text' in pos_tweet and not show_original_tweets:
+                st.write(pos_tweet['cleaned_text'])
+                st.caption(f"Sentiment Score: {pos_tweet.get('sentiment_score', 'N/A'):.3f}")
+            else:
+                st.write(pos_tweet['text'])
+                st.caption(f"Sentiment Score: {pos_tweet.get('sentiment_score', 'N/A'):.3f}")
+    
+    with col2:
+        if not neg_tweets.empty:
+            st.error("**Most Negative Tweet:**")
+            neg_tweet = neg_tweets.iloc[0]
+            # Use cleaned text if available and not showing original
+            if 'cleaned_text' in neg_tweet and not show_original_tweets:
+                st.write(neg_tweet['cleaned_text'])
+                st.caption(f"Sentiment Score: {neg_tweet.get('sentiment_score', 'N/A'):.3f}")
+            else:
+                st.write(neg_tweet['text'])
+                st.caption(f"Sentiment Score: {neg_tweet.get('sentiment_score', 'N/A'):.3f}")
 
 # --- Campaign comparison table ---
 st.subheader("📊 Campaign Comparison")
@@ -243,29 +297,75 @@ for campaign in selected_campaigns:
 
 # --- Download as CSV ---
 st.subheader("📥 Download Data")
-st.download_button("Download CSV", df.to_csv(index=False), "filtered_campaign_data.csv", "text/csv")
+col1, col2 = st.columns(2)
+with col1:
+    st.download_button("Download Analytics Summary", df.to_csv(index=False), "campaign_analytics.csv", "text/csv")
+with col2:
+    if not tweet_df.empty:
+        # Prepare tweet data for download
+        download_df = tweet_df.copy()
+        if 'cleaned_text' in download_df.columns and not show_original_tweets:
+            download_df = download_df[['created_at', 'cleaned_text', 'sentiment_label', 'sentiment_score', 'campaign']]
+            download_df.columns = ['Time', 'Tweet (Cleaned)', 'Sentiment', 'Score', 'Campaign']
+        else:
+            download_df = download_df[['created_at', 'text', 'sentiment_label', 'sentiment_score', 'campaign']]
+            download_df.columns = ['Time', 'Tweet', 'Sentiment', 'Score', 'Campaign']
+        st.download_button("Download Tweet Data", download_df.to_csv(index=False), "tweet_data.csv", "text/csv")
 
 # --- Colored tweets table ---
 st.subheader("🗃️ Latest Tweets (Colored by Sentiment)")
+
 def sentiment_row_color(row):
-    if row.get('sentiment_label') == 'POSITIVE':
+    if row.get('Sentiment') == 'POSITIVE':
         return ['background-color: #e6ffe6'] * len(row)
-    elif row.get('sentiment_label') == 'NEGATIVE':
+    elif row.get('Sentiment') == 'NEGATIVE':
         return ['background-color: #ffe6e6'] * len(row)
     else:
         return [''] * len(row)
 
 if not tweet_df.empty:
     tweet_df['created_at'] = pd.to_datetime(tweet_df['created_at']).dt.strftime('%Y-%m-%d %H:%M')
-    st.dataframe(tweet_df[["created_at", "text", "sentiment_label"]].style.apply(sentiment_row_color, axis=1))
+    
+    # Prepare display dataframe based on user preference and data availability
+    if 'cleaned_text' in tweet_df.columns and not show_original_tweets:
+        # Show cleaned tweets
+        display_df = tweet_df[["created_at", "cleaned_text", "sentiment_label"]].copy()
+        display_df.columns = ["Time", "Tweet (Cleaned)", "Sentiment"]
+        st.caption("Showing cleaned tweets (URLs, mentions, and noise removed)")
+    else:
+        # Show original tweets
+        display_df = tweet_df[["created_at", "text", "sentiment_label"]].copy()
+        display_df.columns = ["Time", "Tweet (Original)", "Sentiment"]
+        st.caption("Showing original tweets")
+    
+    # Apply coloring and display
+    styled_df = display_df.style.apply(sentiment_row_color, axis=1)
+    st.dataframe(styled_df, use_container_width=True)
 else:
     st.info("No tweets available for selected campaigns.")
 
 # --- Word Cloud ---
 st.subheader("☁️ Word Cloud")
 if not tweet_df.empty:
-    text_corpus = " ".join(tweet_df['text'].astype(str))
-    wordcloud = WordCloud(width=800, height=300, background_color='white').generate(text_corpus)
+    # Use cleaned text if available and not showing original
+    if 'cleaned_text' in tweet_df.columns and not show_original_tweets:
+        text_corpus = " ".join(tweet_df['cleaned_text'].astype(str))
+        st.caption("Word cloud generated from cleaned tweets (more meaningful without URLs and noise)")
+    else:
+        text_corpus = " ".join(tweet_df['text'].astype(str))
+        st.caption("Word cloud generated from original tweets")
+    
+    # Create word cloud with better parameters
+    wordcloud = WordCloud(
+        width=800, 
+        height=300, 
+        background_color='white',
+        max_words=100,
+        relative_scaling=0.5,
+        colormap='viridis',
+        stopwords=set(['https', 'http', 'RT', 'amp', 'user', 'users'])  # Additional stopwords
+    ).generate(text_corpus)
+    
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.imshow(wordcloud, interpolation='bilinear')
     ax.axis('off')
@@ -273,4 +373,6 @@ if not tweet_df.empty:
 else:
     st.info("No tweet texts available for word cloud.")
 
+# --- Footer ---
 st.caption("Green=Positive, Red=Negative, White=Neutral. Dashboard refreshes every 60s. Use sidebar filters to explore.")
+st.caption("💡 Tip: Toggle 'Show original tweets' in the sidebar to switch between cleaned and raw tweet text.")

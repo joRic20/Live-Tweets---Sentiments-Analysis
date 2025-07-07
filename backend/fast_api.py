@@ -252,7 +252,7 @@ def analytics(
         logger.error(f"Error fetching analytics: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch analytics")
 
-# --- Endpoint: Latest tweets with sentiment for selected campaigns/date range ---
+# --- UPDATED: Latest tweets now from PostgreSQL cleaned_tweets table ---
 @app.get("/latest_tweets/")
 def latest_tweets(
     campaigns: str = Query(..., description="Comma-separated campaign names"),
@@ -262,30 +262,89 @@ def latest_tweets(
     api_key: APIKey = Depends(get_api_key)
 ):
     """
-    Returns latest tweets (with sentiment) for colored table/word cloud.
+    Returns latest tweets with sentiment from PostgreSQL cleaned_tweets table.
+    Now includes both original and cleaned text.
     """
     try:
-        # Parse campaigns for MongoDB filter
+        # Parse campaigns for SQL filter
         campaign_list = [c.strip() for c in campaigns.split(",")]
+        
+        # First, try to get from PostgreSQL cleaned_tweets table
+        query = text("""
+            SELECT 
+                tweet_id,
+                campaign,
+                original_text as text,
+                cleaned_text,
+                sentiment_label,
+                sentiment_score,
+                created_at,
+                user_id,
+                hashtags
+            FROM cleaned_tweets
+            WHERE campaign = ANY(:campaigns)
+              AND DATE(created_at) BETWEEN :start AND :end
+            ORDER BY created_at DESC
+            LIMIT :limit
+        """)
+        
+        # Execute query
+        df = pd.read_sql(
+            query, 
+            engine,
+            params={
+                "campaigns": campaign_list, 
+                "start": start, 
+                "end": end,
+                "limit": limit
+            }
+        )
+        
+        if not df.empty:
+            # Convert DataFrame to list of dicts
+            tweets = df.to_dict(orient="records")
+            # Convert datetime to string for JSON serialization
+            for tweet in tweets:
+                tweet["created_at"] = str(tweet["created_at"])
+                # Ensure hashtags is a list
+                if tweet.get("hashtags") is None:
+                    tweet["hashtags"] = []
+            return tweets
+        else:
+            # If no data in PostgreSQL, fall back to MongoDB
+            logger.warning("No data in PostgreSQL cleaned_tweets table, falling back to MongoDB")
+            return latest_tweets_mongodb(campaign_list, start, end, limit)
+            
+    except Exception as e:
+        logger.error(f"Error fetching tweets from PostgreSQL: {e}")
+        # Fallback to MongoDB
+        return latest_tweets_mongodb(campaign_list, start, end, limit)
+
+def latest_tweets_mongodb(campaign_list, start, end, limit):
+    """Fallback function to get tweets from MongoDB"""
+    try:
         query_mongo = {
             "matched_term": {"$in": campaign_list},
             "created_at": {"$gte": start, "$lte": end}
         }
-        fields = {"text": 1, "sentiment_label": 1, "created_at": 1}
-        # Find latest tweets matching the campaigns and time window
+        fields = {"text": 1, "sentiment_label": 1, "sentiment_score": 1, "created_at": 1, "matched_term": 1}
         tweets = list(tweets_collection.find(query_mongo, fields).sort("created_at", -1).limit(limit))
-        # Convert date for JSON and remove MongoDB's _id field
+        
         for t in tweets:
             if "created_at" in t:
                 t["created_at"] = str(t["created_at"])
             if "_id" in t:
                 t.pop("_id")
+            # Add campaign field for consistency
+            t["campaign"] = t.get("matched_term", "unknown")
+            # Add cleaned_text as None since it's not in MongoDB
+            t["cleaned_text"] = None
         return tweets
     except Exception as e:
-        logger.error(f"Error fetching tweets: {e}")
+        logger.error(f"MongoDB fallback also failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch tweets")
 
-# --- Endpoint: Top hashtags ---
+# --- UPDATED: Top hashtags from PostgreSQL ---
 @app.get("/top_hashtags/")
 def top_hashtags(
     campaigns: str = Query(..., description="Comma-separated campaign names"),
@@ -295,11 +354,51 @@ def top_hashtags(
     api_key: APIKey = Depends(get_api_key)
 ):
     """
-    Returns top hashtags for selected campaigns and date range.
+    Returns top hashtags from PostgreSQL cleaned_tweets table.
     """
     try:
         campaign_list = [c.strip() for c in campaigns.split(",")]
-        # MongoDB aggregation pipeline for hashtag counts
+        
+        # Try PostgreSQL first
+        query = text("""
+            SELECT 
+                UNNEST(hashtags) as hashtag,
+                COUNT(*) as count
+            FROM cleaned_tweets
+            WHERE campaign = ANY(:campaigns)
+              AND DATE(created_at) BETWEEN :start AND :end
+              AND hashtags IS NOT NULL
+              AND array_length(hashtags, 1) > 0
+            GROUP BY hashtag
+            ORDER BY count DESC
+            LIMIT :limit
+        """)
+        
+        df = pd.read_sql(
+            query,
+            engine,
+            params={
+                "campaigns": campaign_list,
+                "start": start,
+                "end": end,
+                "limit": limit
+            }
+        )
+        
+        if not df.empty:
+            return dict(zip(df['hashtag'], df['count']))
+        else:
+            # Fallback to MongoDB
+            return top_hashtags_mongodb(campaign_list, start, end, limit)
+            
+    except Exception as e:
+        logger.error(f"Error fetching hashtags from PostgreSQL: {e}")
+        # Fallback to MongoDB
+        return top_hashtags_mongodb(campaign_list, start, end, limit)
+
+def top_hashtags_mongodb(campaign_list, start, end, limit):
+    """Fallback function to get hashtags from MongoDB"""
+    try:
         pipeline = [
             {
                 "$match": {
@@ -316,7 +415,7 @@ def top_hashtags(
         results = list(tweets_collection.aggregate(pipeline))
         return {item["_id"]: item["count"] for item in results}
     except Exception as e:
-        logger.error(f"Error fetching hashtags: {e}")
+        logger.error(f"MongoDB hashtags fallback also failed: {e}")
         return {}
 
 # --- Endpoint: Top users ---
@@ -333,20 +432,49 @@ def top_users(
     """
     try:
         campaign_list = [c.strip() for c in campaigns.split(",")]
-        # MongoDB aggregation pipeline for user tweet counts
-        pipeline = [
-            {
-                "$match": {
-                    "matched_term": {"$in": campaign_list},
-                    "created_at": {"$gte": start, "$lte": end}
-                }
-            },
-            {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": limit}
-        ]
-        results = list(tweets_collection.aggregate(pipeline))
-        return {str(item["_id"]): item["count"] for item in results}
+        
+        # Try PostgreSQL first
+        query = text("""
+            SELECT 
+                user_id,
+                COUNT(*) as count
+            FROM cleaned_tweets
+            WHERE campaign = ANY(:campaigns)
+              AND DATE(created_at) BETWEEN :start AND :end
+              AND user_id IS NOT NULL
+            GROUP BY user_id
+            ORDER BY count DESC
+            LIMIT :limit
+        """)
+        
+        df = pd.read_sql(
+            query,
+            engine,
+            params={
+                "campaigns": campaign_list,
+                "start": start,
+                "end": end,
+                "limit": limit
+            }
+        )
+        
+        if not df.empty:
+            return dict(zip(df['user_id'].astype(str), df['count']))
+        else:
+            # Fallback to MongoDB
+            pipeline = [
+                {
+                    "$match": {
+                        "matched_term": {"$in": campaign_list},
+                        "created_at": {"$gte": start, "$lte": end}
+                    }
+                },
+                {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+                {"$limit": limit}
+            ]
+            results = list(tweets_collection.aggregate(pipeline))
+            return {str(item["_id"]): item["count"] for item in results}
     except Exception as e:
         logger.error(f"Error fetching users: {e}")
         return {}
