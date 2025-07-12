@@ -94,7 +94,12 @@ services:
       MONGO_DB: twitter_stream
       # MongoDB collection name from .env file
       MONGO_COLL: tweets
+      # Twitter API Bearer Token - CRITICAL FOR INGESTION
+      TWITTER_BEARER_TOKEN: ${TWITTER_BEARER_TOKEN}
+      # Maximum tweets to collect per ingestion session
+      MAX_TWEETS: ${MAX_TWEETS:-100}
     # Expose FastAPI on port 8000
+      TZ: Europe/Berlin  # Set timezone for consistent timestamps
     ports:
       - "8000:8000"
     # Wait for databases to be healthy before starting
@@ -177,20 +182,22 @@ services:
     build: ./backend
     # Custom container name
     container_name: twitter-etl
-    # Don't restart - this is a one-time job that exits when complete
-    restart: "no"
-    # Run the ETL Python script
-    command: python etl.py
+    # Restart unless stopped
+    restart: unless-stopped
+    # Install pycountry before running ETL
+    command: sh -c "pip install pycountry==23.12.11 && while true; do echo 'Running ETL at' $$(date); python etl.py; echo 'ETL complete, sleeping for 30 seconds...'; sleep 30; done"
     # Environment variables for database connections
     environment:
       # PostgreSQL connection for writing analytics
       POSTGRES_URI: ${POSTGRES_URI}
       # MongoDB connection for reading tweets
-      MONGO_URI: ${MONGO_URI}
+      MONGO_URI: mongodb://mongo:27017/twitter_stream
       # MongoDB database name
-      MONGO_DB: ${MONGO_DB}
+      MONGO_DB: twitter_stream
       # MongoDB collection name
-      MONGO_COLL: ${MONGO_COLL}
+      MONGO_COLL: tweets
+      # Twitter Bearer Token (in case ETL needs it)
+      TWITTER_BEARER_TOKEN: ${TWITTER_BEARER_TOKEN}
     # Wait for both databases to be healthy
     depends_on:
       # Need MongoDB to read tweets

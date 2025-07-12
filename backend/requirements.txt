@@ -159,6 +159,7 @@ pydantic-core==2.33.2
     # via pydantic
 pydeck==0.9.1
     # via streamlit
+pycountry==23.12.11
 pygments==2.19.2
     # via
     #   ipython
