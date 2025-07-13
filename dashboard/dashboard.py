@@ -629,26 +629,15 @@ def fetch_analytics_data(params: Dict) -> pd.DataFrame:
         st.error(f"Error fetching analytics: {e}")
         return pd.DataFrame()
 
-def fetch_influencers_data(params: Dict) -> pd.DataFrame:
-    """Fetch influencers driving sentiment data"""
+def fetch_top_tweets(params: Dict) -> pd.DataFrame:
+    """Fetch top tweets based on sentiment"""
     try:
         headers = {"access_token": API_KEY} if API_KEY else {}
-        response = requests.get(f"{API_BASE}/influencers/", params=params, headers=headers, timeout=10)
+        response = requests.get(f"{API_BASE}/top_tweets/", params=params, headers=headers, timeout=10)
         response.raise_for_status()
         return pd.DataFrame(response.json())
     except Exception as e:
-        st.error(f"Error fetching influencers: {e}")
-        return pd.DataFrame()
-
-def fetch_geographic_data(params: Dict) -> pd.DataFrame:
-    """Fetch geographic sentiment distribution data"""
-    try:
-        headers = {"access_token": API_KEY} if API_KEY else {}
-        response = requests.get(f"{API_BASE}/geographic_sentiment/", params=params, headers=headers, timeout=10)
-        response.raise_for_status()
-        return pd.DataFrame(response.json())
-    except Exception as e:
-        st.error(f"Error fetching geographic data: {e}")
+        st.error(f"Error fetching top tweets: {e}")
         return pd.DataFrame()
 
 # ============================================================================
@@ -1083,169 +1072,79 @@ def render_sentiment_distribution(df: pd.DataFrame):
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-def render_influencer_analysis(params: Dict):
-    """Render influencer analysis section"""
+def render_top_tweets_analysis(params: Dict):
+    """Render top tweets analysis section"""
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
     st.markdown("""
     <div class="chart-header">
         <div>
-            <h3 class="chart-title">Top Influencers</h3>
-            <p class="chart-subtitle">Most influential users discussing the campaign</p>
+            <h3 class="chart-title">Top Tweets</h3>
+            <p class="chart-subtitle">Most impactful tweets by sentiment</p>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
-    influencers_df = fetch_influencers_data(params)
+    # Add sentiment filter
+    sentiment_filter = st.selectbox(
+        "Filter by sentiment",
+        ["all", "positive", "negative", "neutral"],
+        index=0,
+        help="Show tweets of specific sentiment"
+    )
     
-    if not influencers_df.empty and all(col in influencers_df.columns for col in ['username', 'follower_count', 'tweet_count', 'avg_sentiment']):
-        # Prepare data for display
-        display_df = influencers_df.copy()
-        
-        # Calculate a proper engagement score if backend just returns follower count as reach_score
-        if 'reach_score' in display_df.columns and len(display_df) > 0 and (display_df['reach_score'] == display_df['follower_count']).all():
-            # Backend is not calculating properly, so we'll calculate a meaningful score
-            # Engagement Score = Followers × log(Tweets+1) × |Sentiment Strength|
-            display_df['impact_score_calc'] = (
-                display_df['follower_count'] * 
-                np.log1p(display_df['tweet_count']) *  # log1p handles 0 tweets gracefully
-                (1 + np.abs(display_df['avg_sentiment']))  # 1+ to ensure we don't multiply by 0
-            )
-            # Sort by our calculated score
-            display_df = display_df.sort_values('impact_score_calc', ascending=False).head(10)
-        else:
-            # Use backend's reach_score if it seems properly calculated
-            if 'reach_score' in display_df.columns:
-                display_df = display_df.sort_values('reach_score', ascending=False).head(10)
-            else:
-                display_df = display_df.sort_values('follower_count', ascending=False).head(10)
-        
-        # Create sentiment badges
-        display_df['Sentiment'] = display_df['avg_sentiment'].apply(
-            lambda x: '🟢 Positive' if x > 0.1 else '🔴 Negative' if x < -0.1 else '⚪ Neutral'
-        )
-        
-        # Format numbers
-        display_df['Followers'] = display_df['follower_count'].apply(
-            lambda x: f"{x/1000000:.1f}M" if x >= 1000000 else f"{x/1000:.1f}K" if x >= 1000 else f"{x:,}"
-        )
-        display_df['Tweets'] = display_df['tweet_count'].apply(lambda x: f"{x:,}")
-        
-        # Create username with @ symbol
-        display_df['User'] = '@' + display_df['username']
-        
-        # Select columns to display
-        display_columns = ['User', 'Followers', 'Tweets', 'Sentiment']
-        
-        # Display as HTML table for better styling
-        st.dataframe(
-            display_df[display_columns],
-            use_container_width=True,
-            hide_index=True,
-            height=400
-        )
-        
-        # Add insights
-        if len(display_df) > 0:
-            top_user = display_df.iloc[0]
-            st.info(f"💡 **Top Influencer**: {top_user['User']} with {top_user['Followers']} followers and {top_user['Tweets']} tweets about the campaign")
-    else:
-        st.markdown("""
-        <div class="empty-state">
-            <div class="empty-state-icon">👥</div>
-            <div class="empty-state-title">No Influencer Data</div>
-            <div class="empty-state-text">Influencer analysis requires user metrics. Data will appear once available.</div>
-        </div>
-        """, unsafe_allow_html=True)
+    # Update params with sentiment filter
+    params_with_filter = params.copy()
+    params_with_filter["sentiment"] = sentiment_filter
+    params_with_filter["limit"] = 10
     
-    st.markdown('</div>', unsafe_allow_html=True)
-
-def render_geographic_insights(params: Dict):
-    """Render geographic distribution map"""
-    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="chart-header">
-        <div>
-            <h3 class="chart-title">Geographic Distribution</h3>
-            <p class="chart-subtitle">Sentiment analysis by country</p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    tweets_df = fetch_top_tweets(params_with_filter)
     
-    geo_df = fetch_geographic_data(params)
-    
-    if not geo_df.empty and len(geo_df) > 0:
-        # Create choropleth map
-        fig = px.choropleth(
-            geo_df,
-            locations='country_code',
-            color='avg_sentiment',
-            hover_name='country',
-            hover_data={
-                'mention_count': ':,',
-                'avg_sentiment': ':.3f',
-                'positive_count': ':,',
-                'negative_count': ':,',
-                'country_code': False
-            },
-            color_continuous_scale='RdYlGn',
-            range_color=[-1, 1],
-            labels={
-                'avg_sentiment': 'Avg Sentiment',
-                'mention_count': 'Total Mentions',
-                'positive_count': 'Positive',
-                'negative_count': 'Negative'
-            }
-        )
-        
-        fig.update_layout(
-            font=dict(family="Inter, sans-serif", size=12),
-            margin=dict(l=0, r=0, t=0, b=0),
-            height=450,
-            paper_bgcolor='white',
-            geo=dict(
-                showframe=False,
-                showcoastlines=True,
-                projection_type='natural earth',
-                bgcolor='white',
-                showcountries=True,
-                countrycolor='#e5e7eb'
-            ),
-            coloraxis_colorbar=dict(
-                title="Sentiment",
-                thickness=15,
-                len=0.7,
-                bgcolor='white',
-                bordercolor='#e5e7eb',
-                borderwidth=1,
-                tickmode='linear',
-                tick0=-1,
-                dtick=0.5
-            )
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Add top countries table
-        if len(geo_df) > 0:
-            st.markdown("#### Top Countries by Mention Volume")
-            top_countries = geo_df.nlargest(5, 'mention_count')[['country', 'mention_count', 'avg_sentiment']]
-            top_countries['Sentiment'] = top_countries['avg_sentiment'].apply(
-                lambda x: '🟢' if x > 0.1 else '🔴' if x < -0.1 else '⚪'
-            )
-            top_countries['Mentions'] = top_countries['mention_count'].apply(lambda x: f"{x:,}")
-            top_countries['Avg Score'] = top_countries['avg_sentiment'].apply(lambda x: f"{x:.3f}")
+    if not tweets_df.empty:
+        # Display tweets
+        for _, tweet in tweets_df.iterrows():
+            sentiment_color = get_sentiment_color(tweet.get('sentiment_score', 0))
+            sentiment_label = tweet.get('sentiment_label', 'NEUTRAL')
             
-            st.dataframe(
-                top_countries[['country', 'Mentions', 'Sentiment', 'Avg Score']],
-                use_container_width=True,
-                hide_index=True
-            )
+            # Create tweet card
+            st.markdown(f"""
+            <div style="
+                background: white;
+                border: 1px solid #e2e8f0;
+                border-left: 4px solid {sentiment_color};
+                border-radius: 8px;
+                padding: 1rem;
+                margin-bottom: 0.75rem;
+                transition: all 0.2s ease;
+            ">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                    <div style="font-weight: 600; color: #1e293b;">
+                        @{tweet.get('username', 'unknown')}
+                    </div>
+                    <div style="
+                        background: {sentiment_color}20;
+                        color: {sentiment_color};
+                        padding: 0.25rem 0.75rem;
+                        border-radius: 9999px;
+                        font-size: 0.75rem;
+                        font-weight: 500;
+                    ">
+                        {sentiment_label} ({tweet.get('sentiment_score', 0):.3f})
+                    </div>
+                </div>
+                <div style="color: #334155; font-size: 0.875rem; line-height: 1.5;">
+                    {tweet.get('text', '')}
+                </div>
+                <div style="color: #94a3b8; font-size: 0.75rem; margin-top: 0.5rem;">
+                    {pd.to_datetime(tweet.get('created_at')).strftime('%b %d, %Y at %I:%M %p')}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
     else:
         st.markdown("""
         <div class="empty-state">
-            <div class="empty-state-icon">🌍</div>
-            <div class="empty-state-title">No Geographic Data</div>
-            <div class="empty-state-text">Geographic insights will appear here once location data is available</div>
+            <div class="empty-state-icon">💬</div>
+            <div class="empty-state-title">No Tweets Found</div>
+            <div class="empty-state-text">No tweets match the selected criteria</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -1361,17 +1260,9 @@ def main():
             with col2:
                 render_sentiment_distribution(df)
             
-            # Additional insights in tabs
+            # Additional insights
             st.markdown("<br>", unsafe_allow_html=True)
-            insight_tab1, insight_tab2 = st.tabs(
-                ["Top Influencers", "🌍 Geographic Insights"]
-            )
-            
-            with insight_tab1:
-                render_influencer_analysis(params)
-            
-            with insight_tab2:
-                render_geographic_insights(params)
+            render_top_tweets_analysis(params)
     
     with tab2:
         st.markdown("### Start Tracking a New Campaign")

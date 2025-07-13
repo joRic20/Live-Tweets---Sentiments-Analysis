@@ -801,3 +801,13 @@ requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.twitter.com',
 2025-07-13 00:30:16,474 INFO Search query: Tesla -is:retweet lang:en
 2025-07-13 00:30:16,475 INFO Search time range: 2025-07-10T00:00:00Z to 2025-07-12T22:29:16.475312+00:00
 2025-07-13 00:30:16,773 WARNING Rate limit exceeded. Sleeping for 901 seconds.
+2025-07-13 01:09:39,471 INFO Search Term: 'Tesla'
+2025-07-13 01:09:39,472 INFO Max Tweets: 100
+2025-07-13 01:09:39,472 INFO Date Range: 2025-07-10 to 2025-07-12
+2025-07-13 01:09:39,481 INFO Connected to MongoDB - Database: twitter_stream, Collection: tweets
+2025-07-13 01:09:39,484 INFO MongoDB indexes created/verified
+2025-07-13 01:09:39,484 INFO Starting enhanced tweet search for: 'Tesla'
+2025-07-13 01:09:39,484 INFO Connected to Twitter API v2
+2025-07-13 01:09:39,484 INFO Search query: Tesla -is:retweet lang:en
+2025-07-13 01:09:39,485 INFO Search time range: 2025-07-10T00:00:00Z to 2025-07-12T23:08:39.485860+00:00
+2025-07-13 01:09:39,731 WARNING Rate limit exceeded. Sleeping for 901 seconds.

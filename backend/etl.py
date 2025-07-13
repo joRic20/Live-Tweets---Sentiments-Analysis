@@ -1,6 +1,6 @@
 # etl.py
 # FIXED ETL script - Process ALL tweets without date restriction
-# Uses REAL user data from MongoDB (follower counts, etc.)
+# Simplified version without user metrics or geographic data
 #
 # Sentiment Scoring System:
 # - Uses cardiffnlp/twitter-roberta-base-sentiment-latest model
@@ -28,8 +28,6 @@ from datetime import datetime, timedelta
 import logging
 import re
 import traceback
-import requests
-import pycountry
 import time
 
 # Configure logging
@@ -67,163 +65,6 @@ def clean_text_for_sentiment(text):
     text = ' '.join(text.split()).strip()
     
     return text
-
-def extract_location_info(tweet_data):
-    """Extract location information from tweet data"""
-    location_info = {
-        'country': None,
-        'country_code': None,
-        'region': None,
-        'city': None
-    }
-    
-    # First check if location data is already at the top level (from ingest.py)
-    if tweet_data.get('place_country'):
-        location_info['country'] = tweet_data.get('place_country')
-        location_info['country_code'] = tweet_data.get('place_country_code')
-        location_info['city'] = tweet_data.get('place_name')
-        return location_info
-    
-    # Try to extract from various location fields
-    if 'geo' in tweet_data and tweet_data['geo']:
-        # Handle coordinate-based location
-        pass  # Would need geocoding service
-    
-    if 'place' in tweet_data and tweet_data['place']:
-        place = tweet_data['place']
-        if 'country' in place:
-            location_info['country'] = place['country']
-        if 'country_code' in place:
-            location_info['country_code'] = place['country_code']
-        if 'name' in place:
-            location_info['city'] = place['name']
-    
-    # Try to extract from user location string
-    user_location = tweet_data.get('user_location', '')
-    
-    if user_location and not location_info['country']:
-        location_info.update(parse_location_string(user_location))
-    
-    return location_info
-
-def parse_location_string(location_str):
-    """Parse location string to extract country information"""
-    location_info = {'country': None, 'country_code': None}
-    
-    if not location_str:
-        return location_info
-    
-    # Common country mappings
-    country_mappings = {
-        'usa': 'United States',
-        'us': 'United States', 
-        'america': 'United States',
-        'uk': 'United Kingdom',
-        'england': 'United Kingdom',
-        'britain': 'United Kingdom',
-        'canada': 'Canada',
-        'australia': 'Australia',
-        'germany': 'Germany',
-        'france': 'France',
-        'spain': 'Spain',
-        'italy': 'Italy',
-        'japan': 'Japan',
-        'china': 'China',
-        'india': 'India',
-        'brazil': 'Brazil',
-        'mexico': 'Mexico'
-    }
-    
-    location_lower = location_str.lower()
-    
-    for key, country in country_mappings.items():
-        if key in location_lower:
-            location_info['country'] = country
-            try:
-                country_obj = pycountry.countries.lookup(country)
-                location_info['country_code'] = country_obj.alpha_2
-            except:
-                pass
-            break
-    
-    return location_info
-
-def get_user_metrics_from_tweet(tweet_data):
-    """Extract real user metrics from tweet data stored by ingest.py"""
-    user_metrics = {
-        'follower_count': 0,
-        'following_count': 0,
-        'tweet_count': 0,
-        'verified': False
-    }
-    
-    if not tweet_data:
-        return user_metrics
-    
-    # FIXED: Check for user metrics at the top level first (as stored by ingest.py)
-    # ingest.py stores these fields directly in the tweet document
-    if 'user_followers_count' in tweet_data:
-        user_metrics['follower_count'] = int(tweet_data.get('user_followers_count', 0) or 0)
-        user_metrics['following_count'] = int(tweet_data.get('user_following_count', 0) or 0)
-        user_metrics['tweet_count'] = int(tweet_data.get('user_tweet_count', 0) or 0)
-        user_metrics['verified'] = bool(tweet_data.get('user_verified', False))
-        
-        # Log if we found user metrics at top level
-        if user_metrics['follower_count'] > 0:
-            logger.debug(f"Found user metrics at top level: {user_metrics['follower_count']} followers")
-        
-        return user_metrics
-    
-    # Fallback: Try to find user data in nested structures
-    user_data = None
-    
-    # Check common Twitter API response structures
-    if 'user' in tweet_data and tweet_data['user']:
-        user_data = tweet_data['user']
-    elif 'author' in tweet_data and tweet_data['author']:
-        user_data = tweet_data['author']
-    elif 'includes' in tweet_data and 'users' in tweet_data['includes']:
-        # Twitter API v2 structure
-        users = tweet_data['includes']['users']
-        if users and len(users) > 0:
-            user_data = users[0]
-    
-    # Extract metrics from user data
-    if user_data and isinstance(user_data, dict):
-        # Common field names for follower count (handle both int and string)
-        follower_count = (
-            user_data.get('followers_count', 0) or
-            user_data.get('public_metrics', {}).get('followers_count', 0) or
-            user_data.get('follower_count', 0) or
-            0
-        )
-        user_metrics['follower_count'] = int(follower_count) if follower_count else 0
-        
-        # Common field names for following/friends count
-        following_count = (
-            user_data.get('friends_count', 0) or
-            user_data.get('public_metrics', {}).get('following_count', 0) or
-            user_data.get('following_count', 0) or
-            0
-        )
-        user_metrics['following_count'] = int(following_count) if following_count else 0
-        
-        # Common field names for tweet count
-        tweet_count = (
-            user_data.get('statuses_count', 0) or
-            user_data.get('public_metrics', {}).get('tweet_count', 0) or
-            user_data.get('tweet_count', 0) or
-            0
-        )
-        user_metrics['tweet_count'] = int(tweet_count) if tweet_count else 0
-        
-        # Verified status
-        user_metrics['verified'] = bool(
-            user_data.get('verified', False) or
-            user_data.get('verified_type', None) is not None
-        )
-    
-    return user_metrics
 
 # Load environment variables
 MONGO_URI = clean_env_var(os.environ.get("MONGO_URI"))
@@ -316,25 +157,8 @@ CREATE TABLE IF NOT EXISTS cleaned_tweets (
     user_id VARCHAR(255),
     username VARCHAR(255),
     hashtags TEXT[],
-    country VARCHAR(100),
-    country_code VARCHAR(2),
-    region VARCHAR(100),
-    city VARCHAR(100),
     created_date DATE,
     created_hour TIMESTAMP
-);
-"""
-
-create_user_metrics_table_sql = """
-CREATE TABLE IF NOT EXISTS user_metrics (
-    id SERIAL PRIMARY KEY,
-    user_id VARCHAR(255) UNIQUE,
-    username VARCHAR(255),
-    follower_count INT,
-    following_count INT,
-    tweet_count INT,
-    verified BOOLEAN,
-    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
 
@@ -344,9 +168,6 @@ CREATE INDEX IF NOT EXISTS idx_campaign_hour ON cleaned_tweets (campaign, create
 CREATE INDEX IF NOT EXISTS idx_sentiment ON cleaned_tweets (sentiment_label);
 CREATE INDEX IF NOT EXISTS idx_created ON cleaned_tweets (created_at);
 CREATE INDEX IF NOT EXISTS idx_user_id ON cleaned_tweets (user_id);
-CREATE INDEX IF NOT EXISTS idx_country ON cleaned_tweets (country);
-CREATE INDEX IF NOT EXISTS idx_user_metrics_user_id ON user_metrics (user_id);
-CREATE INDEX IF NOT EXISTS idx_user_metrics_followers ON user_metrics (follower_count);
 CREATE INDEX IF NOT EXISTS idx_hourly_campaign_datetime ON tweet_analytics_hourly (campaign, datetime);
 """
 
@@ -355,7 +176,6 @@ try:
         conn.execute(text(create_analytics_table_sql))
         conn.execute(text(create_hourly_analytics_table_sql))
         conn.execute(text(create_tweets_table_sql))
-        conn.execute(text(create_user_metrics_table_sql))
         conn.execute(text(create_indexes_sql))
         conn.commit()
     logger.info("PostgreSQL tables ready")
@@ -380,31 +200,10 @@ logger.info(f"Found {count_missing} tweets without sentiment labels")
 BATCH_SIZE = 5000
 tweet_docs = []
 processed_count = 0
-user_metrics_cache = {}
 
 # Process unscored tweets in batches
 total_batches = (count_missing // BATCH_SIZE) + 1
 logger.info(f"Processing {count_missing} tweets in {total_batches} batches")
-
-# Debug: Log structure of first tweet to understand data format
-if count_missing > 0:
-    sample_tweet = tweets_collection.find_one({"sentiment_label": {"$exists": False}})
-    if sample_tweet:
-        logger.info("Sample tweet structure (checking for user metrics fields):")
-        # Check for top-level user metrics fields (from ingest.py)
-        if 'user_followers_count' in sample_tweet:
-            logger.info(f"✓ Found user_followers_count: {sample_tweet.get('user_followers_count', 'N/A')}")
-        if 'user_following_count' in sample_tweet:
-            logger.info(f"✓ Found user_following_count: {sample_tweet.get('user_following_count', 'N/A')}")
-        if 'user_tweet_count' in sample_tweet:
-            logger.info(f"✓ Found user_tweet_count: {sample_tweet.get('user_tweet_count', 'N/A')}")
-        if 'user_verified' in sample_tweet:
-            logger.info(f"✓ Found user_verified: {sample_tweet.get('user_verified', 'N/A')}")
-            
-        # Log if metrics are missing
-        if 'user_followers_count' not in sample_tweet:
-            logger.warning("⚠ user_followers_count field not found at top level")
-            logger.info("Available top-level fields: " + ", ".join([k for k in sample_tweet.keys() if 'user' in k]))
 
 for batch_num in range(total_batches):
     skip_count = batch_num * BATCH_SIZE
@@ -499,11 +298,7 @@ for batch_num in range(total_batches):
                 }}
             )
             
-            # Extract location information
-            location_info = extract_location_info(tweet)
-            
-            # Get user metrics from the actual tweet data
-            # FIXED: Get user_id from various possible locations
+            # Get user_id from various possible locations
             user_id = str(tweet.get('user_id', '') or tweet.get('author_id', ''))
             
             # Get username - check multiple possible locations
@@ -511,23 +306,11 @@ for batch_num in range(total_batches):
                        tweet.get('user_name', '') or 
                        tweet.get('screen_name', ''))
             
-            if user_id and user_id not in user_metrics_cache:
-                user_metrics = get_user_metrics_from_tweet(tweet)
-                user_metrics_cache[user_id] = user_metrics
-                
-                # Log first few users with real follower data
-                if user_metrics['follower_count'] > 0 and len(user_metrics_cache) <= 5:
-                    logger.info(f"Found user @{username} ({user_id}) with {user_metrics['follower_count']:,} followers")
-            
             # Enhance tweet document
             tweet['sentiment_label'] = sentiment_label
             tweet['sentiment_score'] = sentiment_score
             tweet['confidence_score'] = confidence_score
             tweet['cleaned_text'] = cleaned_text
-            tweet['country'] = location_info.get('country')
-            tweet['country_code'] = location_info.get('country_code')
-            tweet['region'] = location_info.get('region')
-            tweet['city'] = location_info.get('city')
             tweet['username'] = username
             tweet['user_id'] = user_id  # Ensure user_id is stored
             
@@ -550,12 +333,6 @@ if processed_count > 0:
     for label, count in sentiment_counts.items():
         percentage = (count / processed_count) * 100
         logger.info(f"  {label}: {count} ({percentage:.1f}%)")
-    
-    # Log sample of user metrics found
-    sample_users = list(user_metrics_cache.items())[:5]
-    logger.info(f"Sample user metrics extracted (first 5):")
-    for user_id, metrics in sample_users:
-        logger.info(f"  User {user_id}: {metrics['follower_count']:,} followers")
 
 # UPDATED: Fetch ALL already-scored tweets (no date filter)
 already_scored_count = tweets_collection.count_documents({
@@ -613,21 +390,13 @@ for batch_num in range((already_scored_count // BATCH_SIZE) + 1):
         else:
             tweet['cleaned_text'] = ''
         
-        # Extract location and user data
-        location_info = extract_location_info(tweet)
-        tweet['country'] = location_info.get('country')
-        tweet['country_code'] = location_info.get('country_code')
-        
-        # FIXED: Get user_id from various possible locations
+        # Get user_id from various possible locations
         user_id = str(tweet.get('user_id', '') or tweet.get('author_id', ''))
             
         # Get username - check multiple possible locations
         username = (tweet.get('username', '') or 
                    tweet.get('user_name', '') or 
                    tweet.get('screen_name', ''))
-            
-        if user_id and user_id not in user_metrics_cache:
-            user_metrics_cache[user_id] = get_user_metrics_from_tweet(tweet)
         
         tweet['username'] = username
         tweet['user_id'] = user_id
@@ -689,67 +458,12 @@ else:
 df['sentiment_label'] = df['sentiment_label'].fillna('UNKNOWN')
 df['sentiment_score'] = df['sentiment_score'].fillna(0.0)
 
-# FIXED: Store user metrics using UPSERT
-logger.info("Storing user metrics...")
-try:
-    if user_metrics_cache:
-        stored_count = 0
-        users_with_real_data = 0
-        
-        for user_id, metrics in user_metrics_cache.items():
-            if user_id:
-                # Log if we have real follower data
-                if metrics['follower_count'] > 0:
-                    users_with_real_data += 1
-                
-                # Find username from tweets
-                username = ''
-                user_tweets = df[df['user_id'] == user_id]
-                if len(user_tweets) > 0:
-                    username = user_tweets.iloc[0].get('username', '')
-                
-                upsert_user_sql = text("""
-                    INSERT INTO user_metrics (
-                        user_id, username, follower_count, 
-                        following_count, tweet_count, verified
-                    ) VALUES (
-                        :user_id, :username, :follower_count,
-                        :following_count, :tweet_count, :verified
-                    )
-                    ON CONFLICT (user_id) DO UPDATE SET
-                        follower_count = EXCLUDED.follower_count,
-                        following_count = EXCLUDED.following_count,
-                        tweet_count = EXCLUDED.tweet_count,
-                        verified = EXCLUDED.verified,
-                        username = EXCLUDED.username,
-                        last_updated = CURRENT_TIMESTAMP
-                """)
-                
-                with engine.connect() as conn:
-                    conn.execute(upsert_user_sql, {
-                        'user_id': user_id,
-                        'username': username or user_id,
-                        'follower_count': metrics['follower_count'],
-                        'following_count': metrics['following_count'],
-                        'tweet_count': metrics['tweet_count'],
-                        'verified': metrics['verified']
-                    })
-                    conn.commit()
-                    stored_count += 1
-        
-        logger.info(f"Stored/updated {stored_count} user metrics")
-        logger.info(f"Users with real follower data: {users_with_real_data}/{stored_count}")
-
-except Exception as e:
-    logger.error(f"Failed to store user metrics: {e}")
-
 # FIXED: Store cleaned tweets using UPSERT instead of DELETE/INSERT
 logger.info("Storing cleaned tweets in PostgreSQL...")
 try:
     required_columns = ['tweet_id', 'campaign', 'text', 'cleaned_text',
                        'sentiment_label', 'sentiment_score', 'confidence_score', 'created_at',
-                       'user_id', 'username', 'hashtags', 'country', 'country_code',
-                       'created_hour']
+                       'user_id', 'username', 'hashtags', 'created_hour']
     
     # Ensure tweet_id exists in df first
     if 'tweet_id' not in df.columns:
@@ -775,7 +489,7 @@ try:
                     df[col] = df['text'].apply(lambda t: re.findall(r'#\w+', str(t)) if t else [])
                 else:
                     df[col] = [[] for _ in range(len(df))]
-            elif col in ['country', 'country_code', 'username']:
+            elif col == 'username':
                 df[col] = None
             elif col == 'confidence_score':
                 df[col] = df['sentiment_score'].abs()
@@ -825,20 +539,18 @@ try:
                         tweet_id, campaign, original_text, cleaned_text,
                         sentiment_label, sentiment_score, confidence_score,
                         created_at, user_id, username, hashtags,
-                        country, country_code, created_date, created_hour
+                        created_date, created_hour
                     ) VALUES (
                         :tweet_id, :campaign, :original_text, :cleaned_text,
                         :sentiment_label, :sentiment_score, :confidence_score,
                         :created_at, :user_id, :username, :hashtags,
-                        :country, :country_code, :created_date, :created_hour
+                        :created_date, :created_hour
                     )
                     ON CONFLICT (tweet_id) DO UPDATE SET
                         sentiment_label = EXCLUDED.sentiment_label,
                         sentiment_score = EXCLUDED.sentiment_score,
                         confidence_score = EXCLUDED.confidence_score,
                         cleaned_text = EXCLUDED.cleaned_text,
-                        country = EXCLUDED.country,
-                        country_code = EXCLUDED.country_code,
                         username = EXCLUDED.username,
                         created_hour = EXCLUDED.created_hour
                     RETURNING (xmax = 0) AS inserted
@@ -857,8 +569,6 @@ try:
                         'user_id': str(tweet_row['user_id']) if tweet_row['user_id'] else '',
                         'username': str(tweet_row['username']) if tweet_row['username'] else '',
                         'hashtags': tweet_row['hashtags'],
-                        'country': tweet_row['country'],
-                        'country_code': tweet_row['country_code'],
                         'created_date': tweet_row['created_date'],
                         'created_hour': tweet_row['created_hour']
                     })
@@ -986,12 +696,5 @@ logger.info("ETL completed successfully!")
 logger.info(f"- Processing time: {processing_time:.2f} seconds")
 logger.info(f"- Processed {processed_count} new tweets")
 logger.info(f"- Total tweets handled: {len(tweet_docs)}")
-logger.info(f"- User metrics stored: {len(user_metrics_cache)}")
-
-# Log how many users had real follower data
-if user_metrics_cache:
-    users_with_real_data = sum(1 for metrics in user_metrics_cache.values() if metrics['follower_count'] > 0)
-    logger.info(f"- Users with real follower data: {users_with_real_data}/{len(user_metrics_cache)}")
-
 logger.info(f"- Daily analytics updated: {len(agg_daily) if 'agg_daily' in locals() else 0}")
 logger.info(f"- Hourly analytics updated: {len(agg_hourly) if 'agg_hourly' in locals() else 0}")

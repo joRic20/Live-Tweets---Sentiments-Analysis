@@ -1,6 +1,6 @@
 # fast_api.py
 # FastAPI app for analytics API focused on sentiment measurements
-# Updated with hourly analytics support (product sentiment removed)
+# Updated with hourly analytics support (product sentiment and user metrics removed)
 
 from fastapi import FastAPI, Query, Depends, Security, HTTPException, BackgroundTasks
 from fastapi.security.api_key import APIKeyHeader, APIKey
@@ -16,7 +16,6 @@ import sys
 import logging
 from pydantic import BaseModel
 from typing import Optional
-import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -117,10 +116,6 @@ def ensure_api_database_schema():
             # List of columns that should exist for full API functionality
             required_columns = [
                 ("confidence_score", "double precision"),
-                ("country", "character varying"),
-                ("country_code", "character varying"),
-                ("region", "character varying"),
-                ("city", "character varying"),
                 ("username", "character varying"),
                 ("created_hour", "timestamp")  # NEW: for hourly aggregation
             ]
@@ -144,22 +139,6 @@ def ensure_api_database_schema():
                         logger.info(f"✅ API: Added missing column {column_name}")
                     except Exception as e:
                         logger.warning(f"Could not add column {column_name}: {e}")
-            
-            # Create user_metrics table if it doesn't exist
-            create_user_metrics_sql = """
-            CREATE TABLE IF NOT EXISTS user_metrics (
-                id SERIAL PRIMARY KEY,
-                user_id VARCHAR(255) UNIQUE,
-                username VARCHAR(255),
-                follower_count INT DEFAULT 0,
-                following_count INT DEFAULT 0,
-                tweet_count INT DEFAULT 0,
-                verified BOOLEAN DEFAULT FALSE,
-                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-            
-            conn.execute(text(create_user_metrics_sql))
             
             # NEW: Create hourly analytics table if it doesn't exist
             create_hourly_analytics_sql = """
@@ -734,71 +713,44 @@ def analytics_summary(
         raise HTTPException(status_code=500, detail="Failed to fetch analytics summary")
 
 # ============================================================================
-# KEY MEASUREMENT ENDPOINTS
+# SIMPLIFIED DATA ENDPOINTS
 # ============================================================================
 
-@app.get("/influencers/")
-def get_influencers(
+@app.get("/top_tweets/")
+def get_top_tweets(
     campaigns: str = Query(..., description="Comma-separated campaign names"),
     start: str = Query(..., description="Start date YYYY-MM-DD"),
     end: str = Query(..., description="End date YYYY-MM-DD"),
-    limit: int = Query(20, description="Number of top influencers"),
+    sentiment: str = Query("all", description="Filter by sentiment: positive, negative, neutral, all"),
+    limit: int = Query(20, description="Number of tweets to return"),
     api_key: APIKey = Depends(get_api_key)
 ):
-    """Returns influencers driving sentiment (users with high follower counts and engagement)"""
+    """Returns top tweets based on sentiment for the selected campaigns"""
     try:
         campaign_list = [c.strip() for c in campaigns.split(",")]
         
-        # Check if user_metrics table exists and has data
-        try:
-            with engine.connect() as conn:
-                test_query = text("SELECT COUNT(*) FROM user_metrics")
-                user_metrics_count = conn.execute(test_query).fetchone()[0]
-        except:
-            user_metrics_count = 0
+        # Build sentiment filter
+        sentiment_filter = ""
+        if sentiment.lower() in ['positive', 'negative', 'neutral']:
+            sentiment_filter = f"AND sentiment_label = '{sentiment.upper()}'"
         
-        if user_metrics_count > 0:
-            # Query with user_metrics join for real follower data
-            query = text("""
-                SELECT 
-                    ct.user_id,
-                    COALESCE(ct.username, um.username, ct.user_id) as username,
-                    COALESCE(um.follower_count, 0) as follower_count,
-                    COUNT(*) as tweet_count,
-                    AVG(ct.sentiment_score) as avg_sentiment,
-                    SUM(CASE WHEN ct.sentiment_label = 'POSITIVE' THEN 1 ELSE 0 END) as positive_count,
-                    SUM(CASE WHEN ct.sentiment_label = 'NEGATIVE' THEN 1 ELSE 0 END) as negative_count,
-                    (COALESCE(um.follower_count, 0) * COUNT(*)) as reach_score
-                FROM cleaned_tweets ct
-                LEFT JOIN user_metrics um ON ct.user_id = um.user_id
-                WHERE ct.campaign = ANY(:campaigns)
-                  AND DATE(ct.created_at) BETWEEN :start AND :end
-                  AND COALESCE(um.follower_count, 0) > 0
-                GROUP BY ct.user_id, ct.username, um.username, um.follower_count
-                HAVING COUNT(*) >= 1
-                ORDER BY reach_score DESC
-                LIMIT :limit
-            """)
-        else:
-            # Fallback query without user_metrics
-            query = text("""
-                SELECT 
-                    user_id,
-                    COALESCE(username, user_id) as username,
-                    0 as follower_count,
-                    COUNT(*) as tweet_count,
-                    AVG(sentiment_score) as avg_sentiment,
-                    SUM(CASE WHEN sentiment_label = 'POSITIVE' THEN 1 ELSE 0 END) as positive_count,
-                    SUM(CASE WHEN sentiment_label = 'NEGATIVE' THEN 1 ELSE 0 END) as negative_count,
-                    COUNT(*) as reach_score
-                FROM cleaned_tweets
-                WHERE campaign = ANY(:campaigns)
-                  AND DATE(created_at) BETWEEN :start AND :end
-                GROUP BY user_id, username
-                HAVING COUNT(*) >= 1
-                ORDER BY tweet_count DESC
-                LIMIT :limit
-            """)
+        query = text(f"""
+            SELECT 
+                tweet_id,
+                campaign,
+                original_text as text,
+                sentiment_label,
+                sentiment_score,
+                confidence_score,
+                created_at,
+                username
+            FROM cleaned_tweets
+            WHERE campaign = ANY(:campaigns)
+              AND DATE(created_at) BETWEEN :start AND :end
+              {sentiment_filter}
+            ORDER BY ABS(sentiment_score) DESC, confidence_score DESC
+            LIMIT :limit
+        """)
         
         df = pd.read_sql(
             query,
@@ -811,100 +763,16 @@ def get_influencers(
             }
         )
         
-        return df.to_dict(orient="records") if not df.empty else []
-            
-    except Exception as e:
-        logger.error(f"Error fetching influencers: {e}")
-        return []
-
-@app.get("/geographic_sentiment/")
-def get_geographic_sentiment(
-    campaigns: str = Query(..., description="Comma-separated campaign names"),
-    start: str = Query(..., description="Start date YYYY-MM-DD"),
-    end: str = Query(..., description="End date YYYY-MM-DD"),
-    api_key: APIKey = Depends(get_api_key)
-):
-    """Returns geographic sentiment distribution from real PostgreSQL data"""
-    try:
-        campaign_list = [c.strip() for c in campaigns.split(",")]
-        
-        # Check if geographic columns exist
-        available_columns = get_available_columns()
-        has_geo_columns = 'country' in available_columns and 'country_code' in available_columns
-        
-        logger.info(f"Querying geographic data for campaigns: {campaign_list}")
-        logger.info(f"Geographic columns available: {has_geo_columns}")
-        logger.info(f"Available columns: {available_columns}")
-        
-        if has_geo_columns:
-            # First, let's see how much data we have
-            count_query = text("""
-                SELECT 
-                    COUNT(*) as total_tweets,
-                    COUNT(country) as tweets_with_country,
-                    COUNT(DISTINCT country) as unique_countries
-                FROM cleaned_tweets
-                WHERE campaign = ANY(:campaigns)
-                  AND DATE(created_at) BETWEEN :start AND :end
-            """)
-            
-            count_result = pd.read_sql(
-                count_query,
-                engine,
-                params={
-                    "campaigns": campaign_list,
-                    "start": start,
-                    "end": end
-                }
-            )
-            
-            logger.info(f"Data summary: {count_result.iloc[0].to_dict()}")
-            
-            # Main geographic query
-            query = text("""
-                SELECT 
-                    country,
-                    country_code,
-                    COUNT(*) as mention_count,
-                    AVG(sentiment_score) as avg_sentiment,
-                    SUM(CASE WHEN sentiment_label = 'POSITIVE' THEN 1 ELSE 0 END) as positive_count,
-                    SUM(CASE WHEN sentiment_label = 'NEGATIVE' THEN 1 ELSE 0 END) as negative_count,
-                    SUM(CASE WHEN sentiment_label = 'NEUTRAL' THEN 1 ELSE 0 END) as neutral_count
-                FROM cleaned_tweets
-                WHERE campaign = ANY(:campaigns)
-                  AND DATE(created_at) BETWEEN :start AND :end
-                  AND country IS NOT NULL
-                GROUP BY country, country_code
-                ORDER BY mention_count DESC
-            """)
-            
-            df = pd.read_sql(
-                query,
-                engine,
-                params={
-                    "campaigns": campaign_list,
-                    "start": start,
-                    "end": end
-                }
-            )
-            
-            logger.info(f"Geographic query returned {len(df)} countries")
-            
-            if not df.empty:
-                result = df.to_dict(orient="records")
-                logger.info(f"Returning real geographic data: {[r['country'] for r in result]}")
-                return result
-            else:
-                logger.info("No tweets with country data found")
-                return []
+        if not df.empty:
+            tweets = df.to_dict(orient="records")
+            for tweet in tweets:
+                tweet["created_at"] = str(tweet["created_at"])
+            return tweets
         else:
-            logger.warning("Geographic columns not available in database")
             return []
             
     except Exception as e:
-        logger.error(f"Error fetching geographic sentiment: {e}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Error fetching top tweets: {e}")
         return []
 
 # ============================================================================

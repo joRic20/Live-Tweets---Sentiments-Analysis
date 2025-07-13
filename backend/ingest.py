@@ -1,6 +1,3 @@
-# ingest.py
-# Enhanced tweet ingestion script for comprehensive sentiment analysis
-
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -12,7 +9,6 @@ import logging
 import sys
 import time
 import argparse
-import re
 
 def clean_env_var(value):
     """Remove inline comments and extra quotes from environment variables"""
@@ -41,47 +37,7 @@ def extract_user_location(user_data):
     
     return location_info
 
-def extract_engagement_metrics(tweet):
-    """Extract engagement metrics that could indicate influence"""
-    metrics = {
-        'retweet_count': 0,
-        'like_count': 0,
-        'reply_count': 0,
-        'quote_count': 0
-    }
-    
-    if hasattr(tweet, 'public_metrics') and tweet.public_metrics:
-        metrics.update({
-            'retweet_count': tweet.public_metrics.get('retweet_count', 0),
-            'like_count': tweet.public_metrics.get('like_count', 0),
-            'reply_count': tweet.public_metrics.get('reply_count', 0),
-            'quote_count': tweet.public_metrics.get('quote_count', 0)
-        })
-    
-    return metrics
 
-def detect_product_mentions(text):
-    """Detect potential product/feature mentions in tweet text"""
-    product_keywords = {
-        'customer_service': ['support', 'service', 'help', 'customer service', 'helpdesk', 'assistance'],
-        'product_quality': ['quality', 'build', 'materials', 'durability', 'craftsmanship', 'solid', 'cheap', 'flimsy'],
-        'user_interface': ['ui', 'interface', 'design', 'usability', 'user experience', 'ux', 'layout', 'navigation'],
-        'performance': ['speed', 'fast', 'slow', 'performance', 'efficiency', 'responsive', 'lag', 'quick'],
-        'pricing': ['price', 'cost', 'expensive', 'cheap', 'value', 'affordable', 'overpriced', 'worth'],
-        'features': ['feature', 'functionality', 'capabilities', 'options', 'tools', 'works', 'function'],
-        'delivery': ['shipping', 'delivery', 'arrival', 'packaging', 'logistics', 'received', 'shipped']
-    }
-    
-    detected_categories = []
-    text_lower = text.lower()
-    
-    for category, keywords in product_keywords.items():
-        for keyword in keywords:
-            if keyword in text_lower:
-                detected_categories.append(category)
-                break
-    
-    return detected_categories
 
 # Load environment variables
 TWITTER_BEARER_TOKEN = clean_env_var(os.environ.get("TWITTER_BEARER_TOKEN"))
@@ -190,18 +146,16 @@ def search_tweets():
             end_time=end_time,
             max_results=100,
             tweet_fields=[
-                'created_at', 'author_id', 'lang', 'entities', 'public_metrics',
-                'context_annotations', 'geo', 'in_reply_to_user_id', 'referenced_tweets',
-                'reply_settings', 'source', 'possibly_sensitive'
+                'created_at', 'author_id', 'lang', 'entities',
+                'context_annotations', 'referenced_tweets'
             ],
             user_fields=[
                 'username', 'name', 'location', 'description', 'url', 'verified',
-                'public_metrics', 'created_at', 'profile_image_url'
+                'created_at'
             ],
             expansions=[
-                'author_id', 'geo.place_id', 'in_reply_to_user_id', 'referenced_tweets.id'
-            ],
-            place_fields=['country', 'country_code', 'full_name', 'geo', 'name', 'place_type']
+                'author_id', 'referenced_tweets.id'
+            ]
         )
         
         for page in paginator:
@@ -211,22 +165,11 @@ def search_tweets():
             
             # Create enhanced lookup dictionaries
             users_dict = {}
-            places_dict = {}
             
             # Process included users
             if hasattr(page, 'includes'):
                 if 'users' in page.includes:
                     for user in page.includes['users']:
-                        user_metrics = {
-                            'follower_count': 0,
-                            'following_count': 0,
-                            'tweet_count': 0,
-                            'listed_count': 0
-                        }
-                        
-                        if hasattr(user, 'public_metrics') and user.public_metrics:
-                            user_metrics.update(user.public_metrics)
-                        
                         users_dict[user.id] = {
                             'username': user.username,
                             'name': user.name,
@@ -234,20 +177,7 @@ def search_tweets():
                             'description': getattr(user, 'description', ''),
                             'url': getattr(user, 'url', ''),
                             'verified': getattr(user, 'verified', False),
-                            'profile_image_url': getattr(user, 'profile_image_url', ''),
-                            'user_created_at': str(getattr(user, 'created_at', '')),
-                            **user_metrics
-                        }
-                
-                # Process included places
-                if 'places' in page.includes:
-                    for place in page.includes['places']:
-                        places_dict[place.id] = {
-                            'country': getattr(place, 'country', ''),
-                            'country_code': getattr(place, 'country_code', ''),
-                            'full_name': getattr(place, 'full_name', ''),
-                            'name': getattr(place, 'name', ''),
-                            'place_type': getattr(place, 'place_type', '')
+                            'user_created_at': str(getattr(user, 'created_at', ''))
                         }
             
             # Process each tweet with enhanced data
@@ -255,17 +185,6 @@ def search_tweets():
                 try:
                     # Get user data
                     user_data = users_dict.get(tweet.author_id, {})
-                    
-                    # Get place data
-                    place_data = {}
-                    if hasattr(tweet, 'geo') and tweet.geo and 'place_id' in tweet.geo:
-                        place_data = places_dict.get(tweet.geo['place_id'], {})
-                    
-                    # Extract engagement metrics
-                    engagement_metrics = extract_engagement_metrics(tweet)
-                    
-                    # Detect product mentions
-                    product_categories = detect_product_mentions(tweet.text)
                     
                     # Enhanced MongoDB document
                     tweet_doc = {
@@ -276,8 +195,6 @@ def search_tweets():
                         "user_id": str(tweet.author_id) if tweet.author_id else None,
                         "created_at": tweet.created_at.isoformat() if tweet.created_at else datetime.utcnow().isoformat(),
                         "lang": getattr(tweet, 'lang', None),
-                        "source": getattr(tweet, 'source', ''),
-                        "possibly_sensitive": getattr(tweet, 'possibly_sensitive', False),
                         
                         # User information
                         "username": user_data.get('username', 'unknown'),
@@ -286,23 +203,6 @@ def search_tweets():
                         "user_description": user_data.get('description', ''),
                         "user_url": user_data.get('url', ''),
                         "user_verified": user_data.get('verified', False),
-                        "user_followers_count": user_data.get('follower_count', 0),
-                        "user_following_count": user_data.get('following_count', 0),
-                        "user_tweet_count": user_data.get('tweet_count', 0),
-                        "user_listed_count": user_data.get('listed_count', 0),
-                        
-                        # Geographic information
-                        "place_country": place_data.get('country', ''),
-                        "place_country_code": place_data.get('country_code', ''),
-                        "place_full_name": place_data.get('full_name', ''),
-                        "place_name": place_data.get('name', ''),
-                        "place_type": place_data.get('place_type', ''),
-                        
-                        # Engagement metrics
-                        "retweet_count": engagement_metrics['retweet_count'],
-                        "like_count": engagement_metrics['like_count'],
-                        "reply_count": engagement_metrics['reply_count'],
-                        "quote_count": engagement_metrics['quote_count'],
                         
                         # Enhanced entity extraction
                         "hashtags": [],
@@ -310,12 +210,8 @@ def search_tweets():
                         "urls": [],
                         "cashtags": [],
                         
-                        # Product/feature detection
-                        "product_categories": product_categories,
-                        
                         # Context and annotations
                         "context_annotations": [],
-                        "in_reply_to_user_id": str(getattr(tweet, 'in_reply_to_user_id', '')) if getattr(tweet, 'in_reply_to_user_id', None) else None,
                         
                         # Metadata
                         "matched_term": TRACK_TERM,
@@ -364,14 +260,7 @@ def search_tweets():
                     
                     # Enhanced logging
                     logger.info(f"Tweet {tweet_count}/{MAX_TWEETS}: @{tweet_doc.get('username', 'unknown')} "
-                               f"({tweet_doc.get('user_followers_count', 0)} followers) "
                                f"- {tweet.text[:50]}...")
-                    
-                    if product_categories:
-                        logger.info(f"  └─ Product categories detected: {', '.join(product_categories)}")
-                    
-                    if place_data.get('country'):
-                        logger.info(f"  └─ Location: {place_data['country']}")
                     
                     # Check if we've reached the limit
                     if tweet_count >= MAX_TWEETS:
@@ -417,9 +306,7 @@ def main():
         # Summary statistics
         if tweet_count > 0:
             logger.info("Enhanced data captured:")
-            logger.info("  ✓ User metrics (followers, engagement)")
-            logger.info("  ✓ Geographic information")
-            logger.info("  ✓ Product/feature mentions")
+            logger.info("  ✓ User information")
             logger.info("  ✓ Enhanced entity extraction")
             logger.info("  ✓ Context annotations")
         
