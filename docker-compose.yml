@@ -39,9 +39,11 @@ services:
     # Use the official PostgreSQL version 15 image from Docker Hub
     image: postgres:15
     # Give this container a custom name for easier management
-    container_name: twitter-postgres
+    container_name: postgres
     # Restart policy: restart unless manually stopped
     restart: unless-stopped
+    env_file:
+    - .env
     # Environment variables for PostgreSQL initialization
     environment:
       # Database name - value comes from .env file
