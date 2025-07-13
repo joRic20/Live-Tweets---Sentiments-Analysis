@@ -649,7 +649,7 @@ def render_header():
     st.markdown("""
     <div class="dashboard-header">
         <h1>Sentiment Intelligence Platform</h1>
-        <p>Real-time social media sentiment analysis and insights</p>
+        <p>Near Real-time Twitter sentiment analysis and insights</p>
     </div>
     """, unsafe_allow_html=True)
 
