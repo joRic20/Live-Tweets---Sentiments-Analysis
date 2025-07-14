@@ -177,6 +177,7 @@ def ensure_api_database_schema():
 try:
     engine = create_engine(POSTGRES_URI)
     with engine.connect() as conn:
+        conn.execute(text("SET search_path TO public"))
         conn.execute(text("SELECT 1"))
     logger.info("PostgreSQL connection successful")
     
