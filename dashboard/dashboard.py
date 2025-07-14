@@ -36,7 +36,7 @@ if not API_KEY:
     st.info("Please set API_KEY in your .env file")
     st.stop()
 
-headers = {"access_token": API_KEY}
+headers = {"Authorization": API_KEY}
 # ============================================================================
 # PROFESSIONAL THEME & STYLING
 # ============================================================================
@@ -553,7 +553,7 @@ def load_professional_css():
 def fetch_campaigns() -> List[str]:
     """Fetch list of available campaigns from backend"""
     try:
-        headers = {"access_token": API_KEY} if API_KEY else {}
+        headers = {"Authorization": API_KEY} if API_KEY else {}
         resp = requests.get(f"{API_BASE}/campaigns/", headers=headers, timeout=10)
         resp.raise_for_status()
         return resp.json()
@@ -568,7 +568,7 @@ def fetch_campaigns() -> List[str]:
 def fetch_date_range() -> Tuple[date, date]:
     """Get min/max date in the analytics DB"""
     try:
-        headers = {"access_token": API_KEY} if API_KEY else {}
+        headers = {"Authorization": API_KEY} if API_KEY else {}
         resp = requests.get(f"{API_BASE}/date_range/", headers=headers, timeout=10)
         resp.raise_for_status()
         dates = resp.json()
@@ -592,7 +592,7 @@ def fetch_date_range() -> Tuple[date, date]:
 def fetch_analytics_data(params: Dict) -> pd.DataFrame:
     """Fetch analytics data from backend"""
     try:
-        headers = {"access_token": API_KEY} if API_KEY else {}
+        headers = {"Authorization": API_KEY} if API_KEY else {}
         
         # Try to fetch data - first check what endpoints are available
         try:
@@ -639,7 +639,7 @@ def fetch_analytics_data(params: Dict) -> pd.DataFrame:
 def fetch_top_tweets(params: Dict) -> pd.DataFrame:
     """Fetch top tweets based on sentiment"""
     try:
-        headers = {"access_token": API_KEY} if API_KEY else {}
+        headers = {"Authorization": API_KEY} if API_KEY else {}
         response = requests.get(f"{API_BASE}/top_tweets/", params=params, headers=headers, timeout=10)
         response.raise_for_status()
         return pd.DataFrame(response.json())
@@ -1322,7 +1322,7 @@ def main():
             else:
                 with st.spinner(f'Starting campaign tracking for "{campaign_name}"...'):
                     try:
-                        headers = {"access_token": API_KEY} if API_KEY else {}
+                        headers = {"Authorization": API_KEY} if API_KEY else {}
                         resp = requests.post(
                             f"{API_BASE}/start_ingest/",
                             json={
