@@ -2,3 +2,4 @@
 .env
 fast_api.cpython-311.pyc
 __pycache__
+venv

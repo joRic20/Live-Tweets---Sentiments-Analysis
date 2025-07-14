@@ -165,16 +165,12 @@ services:
       - twitter-network
     # Health check using Streamlit's internal health endpoint
     healthcheck:
-      # Check Streamlit's health status endpoint
-      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
-      # Check every 30 seconds
+      test: ["CMD", "curl", "-f", "http://localhost:8501"] 
       interval: 30s
-      # Timeout after 10 seconds
       timeout: 10s
-      # Retry 3 times
       retries: 3
-      # Wait 40 seconds for Streamlit to initialize
       start_period: 40s
+
 
   # ETL service for batch processing and sentiment analysis
   etl:
