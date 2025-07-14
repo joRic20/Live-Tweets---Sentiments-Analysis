@@ -45,7 +45,7 @@ if not all([POSTGRES_URI, MONGO_URI, MONGO_DB, MONGO_COLL]):
     logger.error("Missing required environment variables!")
     sys.exit(1)
 
-API_KEY_NAME = "access_token"
+API_KEY_NAME = "Authorization"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 # Request model for ingestion
