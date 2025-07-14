@@ -5,7 +5,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install
-COPY requirements-etl.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy ETL script and shell script
