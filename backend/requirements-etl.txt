@@ -1,0 +1,8 @@
+transformers==4.53.0
+torch==2.7.1
+pandas==2.2.3
+pymongo==4.13.2
+psycopg2-binary==2.9.10
+sqlalchemy==2.0.41
+python-dotenv==1.0.1
+numpy==2.3.1
