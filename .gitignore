@@ -10,3 +10,12 @@ prelude.json
 tweets.bson     
 tweets.metadata.json
 tweet_tables_dump.sql
+etl.cpython-311.pyc
+fast_api.cpython-311.pyo
+etl.cpython-311.pyo
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+*.csv           
