@@ -236,7 +236,7 @@ tokenizers==0.21.2
     # via transformers
 toml==0.10.2
     # via streamlit
-torch==2.7.1
+
     # via -r requirements.in
 tornado==6.5.1
     # via streamlit
@@ -248,7 +248,7 @@ traitlets==5.14.3
     # via
     #   ipython
     #   matplotlib-inline
-transformers==4.53.0
+
     # via -r requirements.in
 tweepy==4.16.0
     # via -r requirements.in
@@ -276,5 +276,4 @@ uvicorn==0.35.0
     # via -r requirements.in
 wcwidth==0.2.13
     # via prompt-toolkit
-wordcloud==1.9.4
-    # via -r requirements.in
+

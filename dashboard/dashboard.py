@@ -27,7 +27,7 @@ API_KEY = clean_env_var(os.environ.get("API_KEY"))
 # Validate configuration
 if not API_BASE:
     st.error("❌ API_BASE environment variable is not set!")
-    st.info("Please set API_BASE in your .env file (e.g., API_BASE=https://twitter-fastapi.quandev.xyz)")
+    st.info("Please set API_BASE in your .env file (e.g., API_BASE=http://backend:8000)")
     st.stop()
 
 # ============================================================================
