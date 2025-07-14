@@ -20,16 +20,21 @@ def clean_env_var(value):
         value = value.strip().strip('"\'')
     return value
 
-# Environment setup
 API_BASE = clean_env_var(os.environ.get("API_BASE"))
 API_KEY = clean_env_var(os.environ.get("API_KEY"))
 
 # Validate configuration
 if not API_BASE:
     st.error("❌ API_BASE environment variable is not set!")
-    st.info("Please set API_BASE in your .env file (e.g., API_BASE=http://backend:8000)")
+    st.info("Please set API_BASE in your .env file (e.g., API_BASE=https://twitter-fastapi.quandev.xyz)")
     st.stop()
 
+if not API_KEY:
+    st.error("❌ API_KEY environment variable is not set!")
+    st.info("Please set API_KEY in your .env file")
+    st.stop()
+
+headers = {"access_token": API_KEY}
 # ============================================================================
 # PROFESSIONAL THEME & STYLING
 # ============================================================================
