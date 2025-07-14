@@ -1,5 +1,4 @@
 FROM python:3.11-slim
-
 WORKDIR /app
 
 # Install cron and required packages
@@ -14,7 +13,7 @@ COPY etl.py .
 COPY run_etl.sh .
 RUN chmod +x run_etl.sh
 
-# Setup cron job
+# Setup cron job (correct syntax: minute hour day month weekday command)
 RUN echo "0 * * * * /app/run_etl.sh >> /var/log/etl.log 2>&1" | crontab -
 
 # Create log file
