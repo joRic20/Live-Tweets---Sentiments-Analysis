@@ -23,6 +23,8 @@ def clean_env_var(value):
 API_BASE = clean_env_var(os.environ.get("API_BASE"))
 API_KEY = clean_env_var(os.environ.get("API_KEY"))
 
+print("API_KEY:", API_KEY) 
+
 # Validate configuration
 if not API_BASE:
     st.error("❌ API_BASE environment variable is not set!")
@@ -547,21 +549,19 @@ def load_professional_css():
 # DATA FETCHING FUNCTIONS
 # ============================================================================
 
+@st.cache_data(ttl=60)
 def fetch_campaigns() -> List[str]:
+    """Fetch list of available campaigns from backend"""
     try:
         headers = {"access_token": API_KEY} if API_KEY else {}
-        st.write("🔐 Header:", headers)  # Debug: show what is sent
-        st.write("🌍 API_BASE:", API_BASE)  # Debug: show the API URL
-
         resp = requests.get(f"{API_BASE}/campaigns/", headers=headers, timeout=10)
         resp.raise_for_status()
         return resp.json()
-    except requests.exceptions.HTTPError as http_err:
-        st.error(f"❌ HTTP error: {http_err}")
-        st.error(f"🔁 Response content: {resp.text}")
+    except requests.exceptions.ConnectionError:
+        st.error(f"Cannot connect to backend at {API_BASE}")
         return []
     except Exception as e:
-        st.error(f"❌ General error: {e}")
+        st.error(f"Error fetching campaigns: {e}")
         return []
 
 @st.cache_data(ttl=60)
