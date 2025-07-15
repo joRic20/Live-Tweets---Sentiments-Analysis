@@ -46,6 +46,8 @@ The Sentiment Intelligence Platform provides a comprehensive view of Twitter sen
 - **Latest Tweets Feed**: Real-time stream of recent tweets via `/latest_tweets/`
 - **Refresh Data**: Update analytics with latest Twitter data
 
+- deployed website: https://twitter-sentiment-dashboard.quandev.xyz
+
 ## Architecture
 
 ```
