@@ -141,6 +141,7 @@ The Sentiment Intelligence Platform provides a comprehensive view of Twitter sen
    - Copy this token to your .env file
 
 3. **API Limits (with Elevated Access):**
+   - Free plan with max 100 tweets per month
    - 2 million tweets per month
    - 50 requests per 15 minutes (for app-level auth)
 
