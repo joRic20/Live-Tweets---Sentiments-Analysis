@@ -13,7 +13,7 @@ A real-time Twitter sentiment analysis platform that tracks brand mentions, anal
 
 ## Table of Contents
 
-- [Features](#-features)
+- [Features](#-Dashboard Overview)
 - [Architecture](#-architecture)
 - [Prerequisites](#-prerequisites)
 - [Quick Start](#-quick-start)
@@ -26,22 +26,27 @@ A real-time Twitter sentiment analysis platform that tracks brand mentions, anal
 - [Contributing](#-contributing)
 - [License](#-license)
 
-## Features
+## Dashboard Overview
 
-- **Real-time Tweet Collection**: Stream tweets using Twitter Developer API v2
-- **Advanced Sentiment Analysis**: Utilizes RoBERTa transformer model fine-tuned for tweets
-- **Interactive Dashboard**: Real-time analytics with Streamlit
-- **Text Cleaning Pipeline**: Removes URLs, mentions, and noise for accurate analysis
-- **Multi-Campaign Tracking**: Monitor multiple brands simultaneously
-- **Comprehensive Analytics**:
-  - Sentiment distribution (positive/neutral/negative)
-  - Volume trends over time
-  - Top hashtags and users
-  - Word clouds
-  - Campaign comparison metrics
-- **RESTful API**: Access all data programmatically
-- **Automated ETL**: Continuous processing with configurable intervals
-- **Data Export**: Download analytics and tweet data as CSV
+The Sentiment Intelligence Platform provides a comprehensive view of Twitter sentiment analysis:
+
+![Sentiment Intelligence Platform Dashboard](./path/to/your/dashboard-image.png)
+
+**Key Features Visible:**
+- **Campaign Selection**: Filter by specific campaigns (e.g., Lufthansa)
+- **Date Range Selector**: Analyze data within custom time periods
+- **Real-time Metrics**:
+  - Total Mentions count with period-over-period comparison
+  - Overall Sentiment score and classification
+  - Positive and Negative mention percentages
+- **Sentiment Trend Analysis**: Visualize sentiment changes over time
+- **Sentiment Distribution**: Breakdown of positive, neutral, and negative mentions
+- **Top Tweets Analysis**: 
+  - View most engaging tweets via `/top_tweets/` endpoint
+  - Filter tweets by sentiment labels (positive, negative, neutral)
+  - Identify high-impact content and influencer posts
+- **Latest Tweets Feed**: Real-time stream of recent tweets via `/latest_tweets/`
+- **Refresh Data**: Update analytics with latest Twitter data
 
 ## Architecture
 
