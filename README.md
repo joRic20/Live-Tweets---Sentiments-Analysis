@@ -30,7 +30,7 @@ A real-time Twitter sentiment analysis platform that tracks brand mentions, anal
 
 The Sentiment Intelligence Platform provides a comprehensive view of Twitter sentiment analysis:
 
-![Sentiment Intelligence Platform Dashboard](https://user-images.githubusercontent.com/123456/789012-filename.png)
+![Sentiment Intelligence Platform Dashboard]([https://user-images.githubusercontent.com/123456/789012-filename.png](https://github.com/joRic20/Live-Tweets---Sentiments-Analysis/issues/1#issue-3232077523))
 
 **Key Features Visible:**
 - **Campaign Selection**: Filter by specific campaigns (e.g., Lufthansa)
