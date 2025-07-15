@@ -13,7 +13,7 @@ A real-time Twitter sentiment analysis platform that tracks brand mentions, anal
 
 ## Table of Contents
 
-- [Features](#-Dashboard Overview)
+- [Features](#-Dashboard_overview)
 - [Architecture](#-architecture)
 - [Prerequisites](#-prerequisites)
 - [Quick Start](#-quick-start)
@@ -26,7 +26,7 @@ A real-time Twitter sentiment analysis platform that tracks brand mentions, anal
 - [Contributing](#-contributing)
 - [License](#-license)
 
-## Dashboard Overview
+## Dashboard_overview
 
 The Sentiment Intelligence Platform provides a comprehensive view of Twitter sentiment analysis:
 
