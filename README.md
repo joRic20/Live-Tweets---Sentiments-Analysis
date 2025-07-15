@@ -38,7 +38,7 @@ The Sentiment Intelligence Platform provides a comprehensive view of Twitter sen
 
 The Sentiment Intelligence Platform provides a comprehensive view of Twitter sentiment analysis:
 
-![Sentiment Intelligence Platform Dashboard](https://user-images.githubusercontent.com/YOUR-COPIED-URL-HERE.png)
+![Sentiment Intelligence Platform Dashboard](https://user-images.githubusercontent.com/https://private-user-images.githubusercontent.com/97947681/466486154-7111335f-c9c5-447e-8403-ce07106a31b4.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NTI1ODM1NTgsIm5iZiI6MTc1MjU4MzI1OCwicGF0aCI6Ii85Nzk0NzY4MS80NjY0ODYxNTQtNzExMTMzNWYtYzljNS00NDdlLTg0MDMtY2UwNzEwNmEzMWI0LnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTA3MTUlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUwNzE1VDEyNDA1OFomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTMxMzlkYmFlMDVlMzY2NjM2OGUzM2ZmMDcwMTQ5ZGIwZTg5YmNlM2EzOWVmNTg4ZTNkZGNmOTM0MzYzMDIyMmEmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.Gm7MOnQBWhL6foyt7dnHF9mcUh6Biumi0zBKtBbxXiA.png)
 
 **Key Features Visible:**
 - **Campaign Selection**: Filter by specific campaigns (e.g., Lufthansa)
