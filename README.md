@@ -255,21 +255,29 @@ response = requests.get(
 ## Project Structure
 
 ```
-twitter-sentiment-dashboard/
+LIVE-TWEETS---SENTIMENTS-ANALYSIS/
 ├── backend/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── fast_api.py         # REST API
-│   ├── ingest.py           # Twitter API streaming
-│   └── etl.py              # Sentiment analysis & cleaning
+│   ├── api/
+│   │   ├── Dockerfile
+│   │   ├── fast_api.py           # REST API
+│   │   ├── ingest.py             # Twitter ingestion logic
+│   │   └── requirements.txt
+│   └── etl/
+│       ├── Dockerfile
+│       ├── etl.py                # Data cleaning & sentiment tagging
+│       ├── run_etl.sh            # ETL runner script
+│       └── requirements.txt
 ├── dashboard/
 │   ├── Dockerfile
-│   ├── requirements.txt
-│   └── dashboard.py        # Streamlit interface
-├── docker-compose.yml      # Service orchestration
-├── .env.example           # Environment template
+│   ├── dashboard.py              # Streamlit dashboard UI
+│   └── requirements.txt
+├── docker-compose.yml            # Orchestrates all services
+├── .env                          # Environment variables
 ├── .gitignore
-└── README.md
+├── README.md
+├── requirements.in               # Consolidated requirements
+└── requirements.txt
+
 ```
 
 ### Key Files
