@@ -30,7 +30,27 @@ A real-time Twitter sentiment analysis platform that tracks brand mentions, anal
 
 The Sentiment Intelligence Platform provides a comprehensive view of Twitter sentiment analysis:
 
-![Sentiment Intelligence Platform Dashboard]([https://user-images.githubusercontent.com/123456/789012-filename.png](https://github.com/joRic20/Live-Tweets---Sentiments-Analysis/issues/1#issue-3232077523))
+### Dashboard Overview
+
+The Sentiment Intelligence Platform provides a comprehensive view of Twitter sentiment analysis:
+
+![Sentiment Intelligence Platform Dashboard](https://user-images.githubusercontent.com/YOUR-COPIED-URL-HERE.png)
+
+**Key Features Visible:**
+- **Campaign Selection**: Filter by specific campaigns (e.g., Lufthansa)
+- **Date Range Selector**: Analyze data within custom time periods
+- **Real-time Metrics**:
+  - Total Mentions count with period-over-period comparison
+  - Overall Sentiment score and classification
+  - Positive and Negative mention percentages
+- **Sentiment Trend Analysis**: Visualize sentiment changes over time
+- **Sentiment Distribution**: Breakdown of positive, neutral, and negative mentions
+- **Top Tweets Analysis**: 
+  - View most engaging tweets via `/top_tweets/` endpoint
+  - Filter tweets by sentiment labels (positive, negative, neutral)
+  - Identify high-impact content and influencer posts
+- **Latest Tweets Feed**: Real-time stream of recent tweets via `/latest_tweets/`
+- **Refresh Data**: Update analytics with latest Twitter data
 
 **Key Features Visible:**
 - **Campaign Selection**: Filter by specific campaigns (e.g., Lufthansa)
