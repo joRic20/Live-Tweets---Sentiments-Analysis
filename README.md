@@ -151,15 +151,15 @@ TWITTER_BEARER_TOKEN=your_twitter_bearer_token_here
 API_KEY=your_secure_api_key_here
 
 # PostgreSQL Configuration
-POSTGRES_DB=twitter_analytics
-POSTGRES_USER=postgres
+POSTGRES_DB=database_name
+POSTGRES_USER=username
 POSTGRES_PASSWORD=your_secure_password_here
-POSTGRES_URI=postgresql://postgres:your_secure_password_here@postgres:5432/twitter_analytics
+POSTGRES_URI=postgres_connection_url
 
 # MongoDB Configuration
-MONGO_URI=mongodb://mongo:27017/twitter_stream
-MONGO_DB=twitter_stream
-MONGO_COLL=tweets
+MONGO_URI=mongo_connection_url
+MONGO_DB=database_name
+MONGO_COLL=mongo_collection
 
 # API URLs (for Docker networking)
 API_BASE=http://backend:8000
@@ -188,19 +188,24 @@ The `docker-compose.yml` includes:
 5. View real-time analytics as tweets are collected
 
 ### Viewing Analytics
-
-- **Campaign Selection**: Use sidebar to select campaigns and date ranges
-- **Sentiment Trends**: View sentiment changes over time
-- **Tweet Volume**: Monitor tweet frequency patterns
-- **Top Influencers**: Identify most active users
-- **Hashtag Analysis**: Discover trending hashtags
-- **Export Data**: Download CSV files for further analysis
+- **Campaign Management**: Access campaigns via `/campaigns/` endpoint
+- **Date Range Selection**: Retrieve available date ranges using `/date_range/` and `/date_range_hourly/` endpoints
+- **Analytics Data**: 
+  - General analytics via `/analytics/` endpoint
+  - Hourly analytics breakdowns via `/analytics_hourly/`
+  - Summary statistics through `/analytics_summary/`
+- **Tweet Analysis**:
+  - View top performing tweets with `/top_tweets/`
+  - Monitor latest tweets using `/latest_tweets/`
+- **Data Ingestion**: 
+  - Start new data ingestion with `/start_ingest/`
+  - Check ingestion status via `/ingestion_status/{term}`
+- **System Health**: Monitor API status through `/health` endpoint
 
 ### Display Options
 
-- Toggle between original and cleaned tweets
+- show raw tables
 - Auto-refresh every 60 seconds
-- Color-coded sentiment display (Green=Positive, Red=Negative, Gray=Neutral)
 
 ## API Documentation
 
@@ -208,29 +213,35 @@ The `docker-compose.yml` includes:
 
 All API endpoints (except `/health`) require an API key in the header:
 ```
-access_token: your_api_key_here
+Authorisation: your_api_key_here
 ```
 
-### Endpoints
+### 🔌 API Reference
 
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| GET | `/health` | Health check | No |
-| POST | `/start_ingest/` | Start tracking new term | Yes |
-| GET | `/campaigns/` | List all campaigns | Yes |
-| GET | `/date_range/` | Get data date range | Yes |
-| GET | `/analytics/` | Get aggregated analytics | Yes |
-| GET | `/latest_tweets/` | Get recent tweets | Yes |
-| GET | `/top_hashtags/` | Get trending hashtags | Yes |
-| GET | `/top_users/` | Get most active users | Yes |
+These endpoints are exposed by the FastAPI backend for retrieving sentiment insights, campaign data, and ingestion control:
+
+| Method | Endpoint                   | Description                        | Auth |
+|--------|----------------------------|------------------------------------|------|
+| GET    | `/ingestion_status/{term}` | Get status of a tracked term       | Yes  |
+| GET    | `/health`                  | Health check                       | No   |
+| POST   | `/start_ingest/`           | Start ingesting tweets by term     | Yes  |
+| GET    | `/campaigns/`              | Get list of tracked campaigns      | Yes  |
+| GET    | `/date_range/`             | Get min/max dates for analytics    | Yes  |
+| GET    | `/analytics/`              | Get aggregated campaign analytics  | Yes  |
+| GET    | `/analytics_hourly/`       | Get hourly analytics data          | Yes  |
+| GET    | `/date_range_hourly/`      | Get hourly date range              | Yes  |
+| GET    | `/analytics_summary/`      | Get campaign sentiment summary     | Yes  |
+| GET    | `/top_tweets/`             | Get top-ranked tweets              | Yes  |
+| GET    | `/latest_tweets/`          | Get the latest ingested tweets     | Yes  |
+
 
 ### Example API Usage
 
 ```python
 import requests
 
-headers = {"access_token": "your_api_key"}
-base_url = "http://localhost:8000"
+headers = {"Authorisation": "your_api_key"}
+base_url = "(https://twitter-fastapi-test.quandev.xyz/docs)"
 
 # Start tracking a brand
 response = requests.post(
@@ -241,7 +252,7 @@ response = requests.post(
 
 # Get analytics
 params = {
-    "campaigns": "Nike,Adidas",
+    "campaigns": "Grok,Tesla",
     "start": "2024-01-01",
     "end": "2024-01-31"
 }
